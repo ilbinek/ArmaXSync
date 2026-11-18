@@ -7,7 +7,7 @@
 
   let { repo, onsaved, onjob }: { repo: any; onsaved: () => void; onjob: (id: number) => void } = $props();
   const defaults = { url: "", login: null, import_events: true, import_hidden: true, import_servers: false, include: [] };
-  let m = $state(structuredClone(repo.settings.mirror ?? defaults));
+  let m = $state($state.snapshot(repo.settings.mirror ?? defaults));
   let include = $state((repo.settings.mirror?.include ?? []).join("\n"));
   let password = $state("");
   let schedules = $state<any[]>([]);

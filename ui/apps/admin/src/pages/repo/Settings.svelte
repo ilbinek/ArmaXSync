@@ -7,10 +7,10 @@
   let { repo, onsaved }: { repo: any; onsaved: (job: number | null) => void } = $props();
   let name = $state(repo.name);
   let description = $state(repo.description);
-  let s = $state(structuredClone(repo.settings));
+  let s = $state($state.snapshot(repo.settings));
   let hidden = $state((repo.settings.hidden ?? []).join("\n"));
   let exclude = $state((repo.settings.exclude ?? []).join("\n"));
-  let servers = $state(structuredClone(repo.settings.servers ?? []));
+  let servers = $state($state.snapshot(repo.settings.servers ?? []));
   let mbps = $state(repo.settings.bandwidth_limit ? repo.settings.bandwidth_limit / 1e6 : 0);
   let busy = $state(false);
 
@@ -69,7 +69,7 @@
     <h2>Content rules</h2>
     <div class="grid2">
       <label class="field">Folders clients must not clean up <span class="hint">One per line (e.g. userconfig). Players' extra files there are kept.</span><textarea bind:value={hidden}></textarea></label>
-      <label class="field">Excluded files <span class="hint">Relative paths left out of the repository.</span><textarea bind:value={exclude}></textarea></label>
+      <label class="field">Excluded files and folders <span class="hint">Relative paths left out of the repository, one per line (e.g. .sync).</span><textarea bind:value={exclude}></textarea></label>
     </div>
   </div>
 
