@@ -1,0 +1,185 @@
+# ArmaXSync developer tasks — https://taskfile.dev
+#   task            list tasks
+#   task setup      install UI dependencies (first time)
+#   task desktop    run the desktop app (hot reload)
+#   task server     run the repository server on http://localhost:8080
+#   task cli -- repo list
+#
+# Dev runs keep their data in ./.data (not your real ArmaXSync settings).
+version: "3"
+
+vars:
+  EXE: '{{exeExt}}'
+  DATA: '{{.ROOT_DIR}}/.data'
+  PORT: '{{.PORT | default "8080"}}'
+
+env:
+  ARMAXSYNC_LOG: '{{.ARMAXSYNC_LOG | default "info"}}'
+
+tasks:
+  default:
+    silent: true
+    cmds:
+      - task --list
+
+  # ------------------------------------------------------------------ setup --
+  setup:
+    desc: Install UI dependencies (pnpm) and fetch Rust crates
+    cmds:
+      - pnpm -C ui install
+      - cargo fetch
+
+  # --------------------------------------------------------------------- UI --
+  ui:build:
+    desc: Build the admin and desktop web UIs
+    dir: ui
+    sources:
+      - packages/**/*
+      - apps/*/src/**/*
+      - apps/*/index.html
+      - apps/*/vite.config.ts
+      - exclude: apps/*/build/**/*
+    generates:
+      - apps/admin/build/index.html
+      - apps/desktop/build/index.html
+    cmds:
+      - pnpm build
+
+  ui:check:
+    desc: Type-check the Svelte UIs
+    dir: ui
+    cmds:
+      - pnpm check
+
+  # ------------------------------------------------------------------ build --
+  build:
+    desc: Debug build of CLI, server and desktop app (standalone exe, UI embedded)
+    deps: [ui:build]
+    cmds:
+      - cargo build -p armaxsync -p armaxsync-server
+      # custom-protocol embeds the built UI; without it the exe expects the Vite dev server
+      - cargo build -p armaxsync-gui --features custom-protocol
+      - echo "run target/debug/armaxsync-gui{{.EXE}}"
+
+  release:
+    desc: Optimized CLI, server and desktop binaries (target/release)
+    deps: [ui:build]
+    cmds:
+      - cargo build --release -p armaxsync -p armaxsync-server
+      - cargo build --release -p armaxsync-gui --features custom-protocol
+      - echo "target/release/ armaxsync{{.EXE}} armaxsync-server{{.EXE}} armaxsync-gui{{.EXE}}"
+
+  # -------------------------------------------------------------------- CLI --
+  cli:
+    desc: 'Run the CLI with dev data, e.g. task cli -- repo add <url> --dest D:\Mods'
+    env:
+      ARMAXSYNC_HOME: '{{.DATA}}/client'
+    cmds:
+      - cargo run -q -p armaxsync -- {{.CLI_ARGS}}
+
+  # ---------------------------------------------------------------- desktop --
+  desktop:
+    desc: Run the desktop app in dev mode (Vite hot reload + Rust rebuilds)
+    aliases: [desktop:dev]
+    dir: apps/desktop
+    env:
+      ARMAXSYNC_HOME: '{{.DATA}}/client'
+    cmds:
+      - npx --prefix ../../ui/apps/desktop tauri dev
+
+  desktop:real:
+    desc: Run the desktop app in dev mode using your real ArmaXSync settings
+    dir: apps/desktop
+    cmds:
+      - npx --prefix ../../ui/apps/desktop tauri dev
+
+  desktop:bundle:
+    desc: Build desktop installers (NSIS/MSI on Windows; AppImage/deb/rpm on Linux)
+    dir: apps/desktop
+    cmds:
+      - npx --prefix ../../ui/apps/desktop tauri build
+
+  # ----------------------------------------------------------------- server --
+  server:
+    desc: Run the server on http://localhost:8080 (admin UI at /admin/)
+    deps: [ui:build]
+    env:
+      ARMAXSYNC_DATA_DIR: '{{.DATA}}/server'
+      ARMAXSYNC_BIND: '127.0.0.1:{{.PORT}}'
+      ARMAXSYNC_PUBLIC_URL: 'http://localhost:{{.PORT}}'
+    cmds:
+      - cargo run -p armaxsync-server -- serve
+
+  server:init:
+    desc: 'Create the server owner account, e.g. task server:init USER=admin PASSWORD=changeme123'
+    requires:
+      vars: [PASSWORD]
+    vars:
+      USER: '{{.USER | default "admin"}}'
+    env:
+      ARMAXSYNC_DATA_DIR: '{{.DATA}}/server'
+      ARMAXSYNC_OWNER_PASSWORD: '{{.PASSWORD}}'
+    cmds:
+      - cargo run -q -p armaxsync-server -- init --username {{.USER}}
+
+  server:ui:
+    desc: Admin UI with hot reload on http://localhost:5173/admin/ (needs `task server` running)
+    dir: ui
+    cmds:
+      - pnpm dev:admin
+
+  docker:
+    desc: Build the server Docker image (armaxsync-server:dev)
+    cmds:
+      - docker build -f packaging/docker/Dockerfile -t armaxsync-server:dev .
+
+  # ------------------------------------------------------------------ tests --
+  test:
+    desc: Run all Rust tests
+    deps: [ui:build]
+    cmds:
+      - cargo test --workspace
+
+  test:java:
+    desc: Compatibility tests against the original Java classes (needs a JDK)
+    cmds:
+      - bash tools/java-compat/build.sh
+      - cargo test -p axs-legacy -p axs-zsync
+    env:
+      AXS_JAVA_COMPAT: "1"
+
+  e2e:
+    desc: End-to-end tests with the real legacy ArmA3Sync client (needs JDK + Python)
+    cmds:
+      - cargo build -p armaxsync -p armaxsync-server
+      - bash tools/java-compat/build-legacy-app.sh
+      - bash tools/java-compat/e2e-legacy-client.sh
+      - bash tools/java-compat/e2e-rust-client.sh
+      - bash tools/java-compat/e2e-legacy-vs-server.sh
+
+  # ------------------------------------------------------------------ hygiene --
+  fmt:
+    desc: Format Rust code
+    cmds:
+      - cargo fmt --all
+
+  lint:
+    desc: rustfmt check + clippy (same flags as CI)
+    deps: [ui:build]
+    cmds:
+      - cargo fmt --all -- --check
+      - cargo clippy --workspace --all-targets -- -D warnings -A clippy::type_complexity -A clippy::large_enum_variant
+
+  check:
+    desc: Everything CI checks (lint, tests, UI type-check)
+    cmds:
+      - task: lint
+      - task: test
+      - task: ui:check
+
+  clean:
+    desc: Remove build output and dev data (.data)
+    prompt: This deletes target/, the UI build folders and ./.data — continue?
+    cmds:
+      - cargo clean
+      - rm -rf ui/apps/admin/build ui/apps/desktop/build .data

@@ -1,0 +1,11 @@
+/target
+/tools/java-compat/build
+node_modules/
+/ui/apps/*/.svelte-kit
+/ui/apps/desktop/build
+*.axs-part
+*.axs-tmp
+/.data
+/.task
+/ui/apps/admin/build
+/apps/desktop/gen/schemas

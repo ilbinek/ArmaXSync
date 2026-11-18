@@ -1,0 +1,115 @@
+# ArmaXSync
+
+A Rust rewrite of [ArmA3Sync](https://github.com/DanAlbert/arma3-sync): sync Arma mod repositories, launch the game with modsets, and host repositories with a web administration UI.
+
+ArmaXSync is **wire-compatible with ArmA3Sync**:
+- Legacy clients sync from repositories built or hosted by ArmaXSync.
+- ArmaXSync syncs from repositories built by the legacy app, over HTTP(S) or FTP.
+
+| Component | Binary | What it does |
+|---|---|---|
+| CLI | `armaxsync` | Sync, check, verify, build and push repositories; manage profiles; launch the game. Usable in scripts: `--json` output and real exit codes. |
+| Desktop | `armaxsync-gui` | Tauri app for Windows and Linux: Play, Modsets, Repositories, Servers, Tools and Settings. |
+| Server | `armaxsync-server` | Hosts repositories over HTTP with Range support. Web admin UI, uploads and file manager, delta push, mirroring, cron schedules, users and API tokens, audit log, statistics and Prometheus metrics. |
+
+## Quick start: hosting a repository
+
+```sh
+# Docker
+docker compose -f packaging/docker/compose.yaml up -d   # set ARMAXSYNC_PUBLIC_URL first
+docker compose logs | grep "setup token"                # open http://host:8080/admin/
+
+# or the static binary
+armaxsync-server example-config > config.toml          # edit public_url, data_dir
+armaxsync-server --config config.toml init --username admin
+armaxsync-server --config config.toml
+```
+
+The server speaks plain HTTP. Put a reverse proxy (Caddy, nginx, Traefik) in front of it for TLS, and set `public_url` to the proxy's `https://` URL.
+
+Repositories are served at `https://host/r/<slug>/`. Players have three ways to add one:
+- `armaxsync://` link (one click)
+- ArmA3Sync auto-config URL: `https://host/r/<slug>/.a3s/autoconfig`
+- the public page: `https://host/repo/<slug>`
+
+Ways to get content into a repository:
+- **Web UI**: drag and drop files, folders or zip archives. Changes are staged and published atomically.
+- **Desktop or CLI push**: delta upload with an API token:
+  `armaxsync push --server https://host --server-repo main --token axs_… --path D:\mods --delete`
+- **Mirror**: pull another ArmA3Sync or ArmaXSync repository, on demand or on a cron schedule.
+- **External folder**: point a repository at an existing folder (edited over SFTP or SMB) and rebuild.
+
+## Quick start: players (CLI)
+
+```sh
+armaxsync repo add https://host/r/main/.a3s/autoconfig --dest D:\ArmaMods
+armaxsync check
+armaxsync sync "Main Repo"            # --event "Sunday Op", --dry-run, --exact
+armaxsync import-legacy C:\ArmA3Sync   # repositories, profiles, servers from an old install
+armaxsync modset "Main Repo" --event "Sunday Op"
+armaxsync launch --server "Main Server" --dry-run
+```
+
+Legacy command lines are still accepted: `-sync <repo> <dest> <true|false>`, `-build <repo>`, `-check <repo>` and `-extract <src> <dst>`.
+
+**Exit codes:**
+| Code | Meaning |
+|---|---|
+| 0 | OK |
+| 1 | Error |
+| 2 | Usage |
+| 3 | Not found |
+| 4 | Network |
+| 5 | Verification failed |
+| 10 | Updates available (with `check --fail-on-update`) |
+
+## Building
+
+With [Task](https://taskfile.dev) installed: `task setup` once, then `task desktop`, `task server` or `task cli -- …`. Run `task` to list everything. Dev runs keep their data in `./.data`.
+
+Manually:
+
+```sh
+cargo build --release -p armaxsync -p armaxsync-server
+pnpm -C ui install && pnpm -C ui build          # admin + desktop UIs (Svelte 5)
+cargo build --release -p armaxsync-server       # embeds ui/apps/admin/build
+cd apps/desktop && npx --prefix ../../ui/apps/desktop tauri build
+```
+
+## Repository layout
+
+```
+crates/javaser    Java serialization stream reader/writer (legacy .a3s files)
+crates/legacy     typed ArmA3Sync formats (+ encrypted client files, for import)
+crates/zsync      jazsync-compatible .zsync maker, matcher, range planning
+crates/model      modern manifest (.axs/index.json + manifest.<rev>.json.zst)
+crates/build      repository builder (hashes, sidecars, legacy + modern metadata)
+crates/transport  HTTP(S)/FTP access, rate limiting
+crates/sync       planner + executor (delta, resume, segmented, zip, verify)
+crates/client     client services (registry, status, push, legacy import)
+crates/launcher   addon discovery, profiles, -mod line, Steam/Proton launch, tools
+apps/cli | apps/server | apps/desktop | ui/ (Svelte)
+tools/java-compat Java harness: golden fixtures + end-to-end tests with the original client
+```
+
+## Compatibility testing
+
+`tools/java-compat` compiles the original ArmA3Sync classes:
+
+```sh
+tools/java-compat/build.sh && AXS_JAVA_COMPAT=1 cargo test -p axs-legacy -p axs-zsync
+tools/java-compat/build-legacy-app.sh
+tools/java-compat/e2e-legacy-client.sh       # legacy client ← Rust-built repository
+tools/java-compat/e2e-rust-client.sh         # Rust client ← legacy-built repository
+tools/java-compat/e2e-legacy-vs-server.sh    # legacy client ← armaxsync-server
+```
+
+Known legacy quirks that ArmaXSync works around or documents:
+- The legacy zsync maker crashes on files of exactly 8191 bytes.
+- The legacy `.pbo.zip` builder fails on Java ≥ 9.
+- The legacy client can corrupt its own encrypted repository settings file.
+- The legacy client sends raw UTF-8 bytes in its request paths. The server accepts them.
+
+## License
+
+GPL-3.0-or-later. See [LICENSE](LICENSE).

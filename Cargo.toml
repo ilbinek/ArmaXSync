@@ -1,0 +1,84 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/javaser",
+    "crates/legacy",
+    "crates/zsync",
+    "crates/model",
+    "crates/build",
+    "crates/transport",
+    "crates/sync",
+    "crates/client",
+    "crates/launcher",
+    "apps/cli",
+    "apps/server",
+    "apps/desktop",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/armaxsync/armaxsync"
+rust-version = "1.80"
+
+[workspace.dependencies]
+axs-javaser = { path = "crates/javaser" }
+axs-legacy = { path = "crates/legacy" }
+axs-zsync = { path = "crates/zsync" }
+axs-model = { path = "crates/model" }
+axs-build = { path = "crates/build" }
+axs-transport = { path = "crates/transport" }
+axs-sync = { path = "crates/sync" }
+axs-client = { path = "crates/client" }
+axs-launcher = { path = "crates/launcher" }
+
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+flate2 = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+clap = { version = "4", features = ["derive", "env"] }
+aes = "0.8"
+ecb = { version = "0.1", features = ["std"] }
+tracing = "0.1"
+sha1 = "0.10"
+blake3 = "1"
+rayon = "1"
+walkdir = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+zstd = "0.13"
+filetime = "0.2"
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+futures = "0.3"
+bytes = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "socks", "http2", "charset"] }
+suppaftp = { version = "6", default-features = false }
+percent-encoding = "2"
+toml = "0.8"
+directories = "5"
+axum = "0.8"
+tower-http = { version = "0.6", features = ["fs", "trace", "cors", "compression-full", "timeout", "limit"] }
+tower = "0.5"
+rusqlite = { version = "0.32", features = ["bundled"] }
+argon2 = "0.5"
+rand = "0.8"
+base64 = "0.22"
+chacha20poly1305 = "0.10"
+arc-swap = "1"
+croner = "2"
+sha2 = "0.10"
+async-stream = "0.3"
+rust-embed = "8"
+mime_guess = "2"
+sysinfo = { version = "0.32", default-features = false, features = ["system"] }
+winreg = "0.52"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = "symbols"

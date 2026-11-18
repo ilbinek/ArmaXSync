@@ -1,0 +1,17 @@
+# docker compose -f packaging/docker/compose.yaml up -d
+# First start prints a setup token in `docker compose logs`; open http://<host>:8080/admin/
+services:
+  armaxsync:
+    image: ghcr.io/armaxsync/server:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ARMAXSYNC_PUBLIC_URL: "https://mods.example.com"   # URL clients use (your reverse proxy)
+      # ARMAXSYNC_BANDWIDTH_LIMIT: "50000000"            # bytes/s
+    volumes:
+      - armaxsync-data:/data
+      # External repositories: mount existing mod folders read-write
+      # - /srv/arma/mods:/srv/mods
+volumes:
+  armaxsync-data:

@@ -1,0 +1,24 @@
+[Unit]
+Description=ArmaXSync repository server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=armaxsync
+Group=armaxsync
+ExecStart=/usr/bin/armaxsync-server --config /etc/armaxsync/config.toml serve
+Restart=on-failure
+RestartSec=5
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/armaxsync
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

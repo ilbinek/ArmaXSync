@@ -1,0 +1,31 @@
+[package]
+name = "axs-client"
+description = "ArmaXSync client services shared by the CLI and the GUI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+axs-legacy.workspace = true
+axs-model.workspace = true
+axs-build.workspace = true
+axs-transport.workspace = true
+axs-sync.workspace = true
+axs-launcher.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+directories.workspace = true
+tokio.workspace = true
+futures.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+tokio-util.workspace = true
+percent-encoding.workspace = true
+blake3.workspace = true
+axs-zsync.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

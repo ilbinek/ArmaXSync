@@ -1,0 +1,1 @@
+{"$class":"fr.soe.a3s.domain.repository.ServerInfo","buildDate":{"$date":1700000000123},"compressedPboFilesOnly":false,"hiddenFolderPaths":["@ace/optionals","a/b c/Ã±","userconfig"],"noPartialFileTransfer":true,"numberOfConnections":4,"numberOfFiles":1234,"repositoryContentUpdated":true,"revision":42,"totalFilesSize":98765432101}

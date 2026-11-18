@@ -1,0 +1,78 @@
+name: CI
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+      # The desktop crate embeds ui/apps/desktop/build; the server embeds the admin UI.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm -C ui install && pnpm -C ui build
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings -A clippy::type_complexity -A clippy::large_enum_variant
+      - run: cargo test --workspace
+
+  java-interop:
+    # Rust output must be readable by the original Java classes, and the
+    # legacy client must sync from Rust-built repositories and the server.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: ["8", "21"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.LEGACY_SOURCE_REPO || 'DanAlbert/arma3-sync' }}
+          ref: b9c50a7d0f035de32d212275ed75449509447af0
+          path: legacy
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p armaxsync -p armaxsync-server
+      - run: tools/java-compat/build.sh legacy/ArmA3Sync/src
+      - run: AXS_JAVA_COMPAT=1 cargo test -p axs-legacy -p axs-zsync
+      - run: A3S_APP=legacy/ArmA3Sync tools/java-compat/build-legacy-app.sh
+      - run: tools/java-compat/e2e-legacy-client.sh
+      - run: tools/java-compat/e2e-rust-client.sh
+      - run: tools/java-compat/e2e-legacy-vs-server.sh
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm -C ui install
+      - run: pnpm -C ui check
+      - run: pnpm -C ui build

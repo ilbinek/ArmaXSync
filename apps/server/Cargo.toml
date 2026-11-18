@@ -1,0 +1,77 @@
+[package]
+name = "armaxsync-server"
+description = "ArmaXSync repository server with web administration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "armaxsync-server"
+path = "src/main.rs"
+
+[dependencies]
+axs-legacy.workspace = true
+axs-model.workspace = true
+axs-zsync.workspace = true
+axs-build.workspace = true
+axs-transport.workspace = true
+axs-sync.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+bytes.workspace = true
+axum.workspace = true
+tower-http.workspace = true
+tower.workspace = true
+rusqlite.workspace = true
+argon2.workspace = true
+rand.workspace = true
+base64.workspace = true
+chacha20poly1305.workspace = true
+arc-swap.workspace = true
+croner.workspace = true
+sha2.workspace = true
+sha1.workspace = true
+blake3.workspace = true
+zip.workspace = true
+zstd.workspace = true
+percent-encoding.workspace = true
+async-stream.workspace = true
+rust-embed.workspace = true
+mime_guess.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+axs-client.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+
+[package.metadata.deb]
+maintainer = "ArmaXSync contributors"
+section = "net"
+priority = "optional"
+extended-description = "Hosts Arma 3 / Arma Reforger mod repositories for ArmaXSync and legacy ArmA3Sync clients, with a web administration interface."
+assets = [
+  ["target/release/armaxsync-server", "usr/bin/", "755"],
+  ["../../packaging/systemd/armaxsync-server.service", "lib/systemd/system/", "644"],
+]
+maintainer-scripts = "../../packaging/deb/"
+
+[package.metadata.generate-rpm]
+assets = [
+  { source = "target/release/armaxsync-server", dest = "/usr/bin/armaxsync-server", mode = "755" },
+  { source = "../../packaging/systemd/armaxsync-server.service", dest = "/usr/lib/systemd/system/armaxsync-server.service", mode = "644" },
+]
+post_install_script = "../../packaging/postinst.sh"

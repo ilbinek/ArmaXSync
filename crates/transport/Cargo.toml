@@ -1,0 +1,19 @@
+[package]
+name = "axs-transport"
+description = "HTTP(S) and FTP access to repository files"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+axs-legacy.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+futures.workspace = true
+bytes.workspace = true
+reqwest.workspace = true
+suppaftp.workspace = true
+percent-encoding.workspace = true
+serde.workspace = true

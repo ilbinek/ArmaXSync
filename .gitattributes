@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.a3s binary
+*.a3s.repository binary
+*.zsync binary
+*.png binary
+*.ico binary
+*.icns binary

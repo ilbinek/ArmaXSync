@@ -1,0 +1,36 @@
+[package]
+name = "armaxsync-gui"
+description = "ArmaXSync desktop client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "armaxsync-gui"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+axs-client.workspace = true
+axs-launcher.workspace = true
+axs-sync.workspace = true
+axs-model.workspace = true
+axs-build.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+
+[features]
+# Embed the built UI (ui/apps/desktop/build) instead of loading the Vite dev
+# server. `tauri build` enables this automatically; plain cargo builds need it.
+custom-protocol = ["tauri/custom-protocol"]
