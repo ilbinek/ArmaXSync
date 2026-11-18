@@ -10,7 +10,13 @@ AXS="${AXS_BIN:-$ROOT/target/debug/armaxsync}"
 CP="$(cat "$HERE/build/legacy-app/classpath.txt")"
 # Java 9+ needs the legacy client's internal-API access opened; Java 8 rejects the flag.
 JAVA_EXTRA=""
-java -version 2>&1 | head -1 | grep -q '"1\.' || JAVA_EXTRA="--add-exports java.base/sun.reflect.generics.reflectiveObjects=ALL-UNNAMED"
+# `sed -n 1p` reads all of java's output: `head -1` could SIGPIPE java, which
+# fails the pipeline under `set -o pipefail`.
+JAVA_VERSION="$(java -version 2>&1 | sed -n 1p)"
+case "$JAVA_VERSION" in
+  *'"1.'*) ;;  # Java 8
+  *) JAVA_EXTRA="--add-exports java.base/sun.reflect.generics.reflectiveObjects=ALL-UNNAMED" ;;
+esac
 PORT="${PORT:-18734}"
 PY=""; for c in python3 python; do if command -v "$c" >/dev/null 2>&1 && "$c" -c "import sys" >/dev/null 2>&1; then PY="$(command -v "$c")"; break; fi; done
 SRV=""

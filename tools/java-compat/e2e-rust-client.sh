@@ -9,7 +9,13 @@ AXS="${AXS_BIN:-$ROOT/target/debug/armaxsync}"
 CP="$(cat "$HERE/build/legacy-app/classpath.txt")"
 # Java 9+ needs the legacy client's internal-API access opened; Java 8 rejects the flag.
 JAVA_EXTRA=""
-java -version 2>&1 | head -1 | grep -q '"1\.' || JAVA_EXTRA="--add-exports java.base/sun.reflect.generics.reflectiveObjects=ALL-UNNAMED"
+# `sed -n 1p` reads all of java's output: `head -1` could SIGPIPE java, which
+# fails the pipeline under `set -o pipefail`.
+JAVA_VERSION="$(java -version 2>&1 | sed -n 1p)"
+case "$JAVA_VERSION" in
+  *'"1.'*) ;;  # Java 8
+  *) JAVA_EXTRA="--add-exports java.base/sun.reflect.generics.reflectiveObjects=ALL-UNNAMED" ;;
+esac
 PORT="${PORT:-18735}"
 PY=""; for c in python3 python; do if command -v "$c" >/dev/null 2>&1 && "$c" -c "import sys" >/dev/null 2>&1; then PY="$(command -v "$c")"; break; fi; done
 SRV=""
@@ -57,7 +63,7 @@ OUT=$("$AXS" sync JRepo --json --quiet)
 echo "$OUT" | grep -q '"method":"delta"' && echo "PASS: delta used against legacy .zsync" || { echo "$OUT" | head -20; echo "FAIL: no delta"; exit 1; }
 compare "Rust client: delta sync from legacy-built repo"
 
-JAVA_MAJOR=$(java -version 2>&1 | head -1 | sed -E 's/.*version "(1\.)?([0-9]+).*/\2/')
+JAVA_MAJOR=$(echo "$JAVA_VERSION" | sed -E 's/.*version "(1\.)?([0-9]+).*/\2/')
 if [ "$JAVA_MAJOR" -gt 8 ]; then
   echo "SKIP: compressed legacy build needs Java 8 (legacy ZipDAO breaks on Java $JAVA_MAJOR)"
   "$AXS" verify JRepo && echo "PASS: verify"
