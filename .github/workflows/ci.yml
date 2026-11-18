@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, master]
+    branches: [master]
   pull_request:
 
 env:
@@ -15,7 +15,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -27,7 +27,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 11
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: pnpm -C ui install && pnpm -C ui build
@@ -43,13 +43,13 @@ jobs:
       matrix:
         java: ["8", "21"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           repository: ${{ vars.LEGACY_SOURCE_REPO || 'DanAlbert/arma3-sync' }}
           ref: b9c50a7d0f035de32d212275ed75449509447af0
           path: legacy
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
@@ -66,11 +66,11 @@ jobs:
   ui:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
         with:
           version: 11
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: pnpm -C ui install

@@ -2,8 +2,8 @@
   "name": "armaxsync-ui",
   "private": true,
   "scripts": {
-    "build": "pnpm -r --filter ./apps/* build",
-    "check": "pnpm -r --filter ./apps/* check",
+    "build": "pnpm -r --filter admin --filter desktop build",
+    "check": "pnpm -r --filter admin --filter desktop check",
     "dev:admin": "pnpm --filter admin dev",
     "dev:desktop": "pnpm --filter desktop dev"
   }

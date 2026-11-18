@@ -8,6 +8,9 @@ ROOT="$HERE/../.."
 winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi; }
 AXS="${AXS_BIN:-$ROOT/target/debug/armaxsync}"
 CP="$(cat "$HERE/build/legacy-app/classpath.txt")"
+# Java 9+ needs the legacy client's internal-API access opened; Java 8 rejects the flag.
+JAVA_EXTRA=""
+java -version 2>&1 | head -1 | grep -q '"1\.' || JAVA_EXTRA="--add-exports java.base/sun.reflect.generics.reflectiveObjects=ALL-UNNAMED"
 PORT="${PORT:-18734}"
 PY=""; for c in python3 python; do if command -v "$c" >/dev/null 2>&1 && "$c" -c "import sys" >/dev/null 2>&1; then PY="$(command -v "$c")"; break; fi; done
 SRV=""
@@ -32,7 +35,7 @@ RANGESERVER_LOG="$WORK/requests1.log" "$PY" "$(winpath "$HERE/rangeserver.py")" 
 SRV=$!
 sleep 1
 
-legacy() { (cd "$WORK/client" && java -cp "$CP" --add-exports java.base/sun.reflect.generics.reflectiveObjects=ALL-UNNAMED -Djava.awt.headless=true fr.soe.a3s.main.ArmA3Sync "$@"); }
+legacy() { (cd "$WORK/client" && java -cp "$CP" $JAVA_EXTRA -Djava.awt.headless=true fr.soe.a3s.main.ArmA3Sync "$@"); }
 
 # Create the repository in the legacy client through its console.
 printf 'NEW\nE2E\nHTTP\n%s\nanonymous\n\n127.0.0.1/repo\n\nQUIT\n' "$PORT" | legacy -console > "$WORK/console.log" 2>&1 || true

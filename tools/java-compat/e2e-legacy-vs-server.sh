@@ -6,6 +6,9 @@ ROOT="$HERE/../.."
 winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi; }
 SRVBIN="${AXS_SERVER_BIN:-$ROOT/target/debug/armaxsync-server}"
 CP="$(cat "$HERE/build/legacy-app/classpath.txt")"
+# Java 9+ needs the legacy client's internal-API access opened; Java 8 rejects the flag.
+JAVA_EXTRA=""
+java -version 2>&1 | head -1 | grep -q '"1\.' || JAVA_EXTRA="--add-exports java.base/sun.reflect.generics.reflectiveObjects=ALL-UNNAMED"
 PORT="${PORT:-18736}"
 PY=""; for c in python3 python; do if command -v "$c" >/dev/null 2>&1 && "$c" -c "import sys" >/dev/null 2>&1; then PY="$(command -v "$c")"; break; fi; done
 WORK="$(mktemp -d)"; SRV=""
@@ -32,7 +35,7 @@ wait_job() { for i in $(seq 1 300); do S=$(api "$B/jobs/$1" | "$PY" -c "import s
 J=$(api -d "{\"slug\":\"e2e\",\"name\":\"E2E\",\"mode\":\"external\",\"path\":\"$(winpath "$C")\"}" "$B/repos" | "$PY" -c "import sys,json; print(json.load(sys.stdin)['job'])")
 wait_job "$J"
 
-legacy() { (cd "$WORK/client" && java -cp "$CP" --add-exports java.base/sun.reflect.generics.reflectiveObjects=ALL-UNNAMED -Djava.awt.headless=true fr.soe.a3s.main.ArmA3Sync "$@"); }
+legacy() { (cd "$WORK/client" && java -cp "$CP" $JAVA_EXTRA -Djava.awt.headless=true fr.soe.a3s.main.ArmA3Sync "$@"); }
 register() { rm -f "$WORK"/client/resources/ftp/*; printf 'NEW\nE2E\nHTTP\n%s\nanonymous\n\n127.0.0.1/r/e2e\n\nQUIT\n' "$PORT" | legacy -console > "$WORK/console.log" 2>&1 || true; }
 compare() { if diff -r -x .a3s -x .axs -x '*.zsync' -x '*.pbo.zip' "$C" "$WORK/dest" > "$WORK/diff.txt"; then echo "PASS: $1"; else cat "$WORK/diff.txt"; echo "FAIL: $1"; exit 1; fi; }
 
