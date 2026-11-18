@@ -151,3 +151,20 @@ fn compression_and_sidecar_cleanup() {
     assert!(!zip.exists());
     assert!(!root.join("@m/addons/a.pbo.zsync").exists());
 }
+
+#[test]
+fn excluded_folders_are_skipped() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(root, "@m/addons/a.pbo", b"pbo");
+    write(root, ".sync/ID", b"resilio state");
+    write(root, ".sync/Archive/old.bin", b"x");
+    write(root, "@m/notes.txt", b"skip me");
+    let mut o = opts(root);
+    o.excluded_files = vec![".sync".into(), "@m/notes.txt".into()];
+    let r = run(&o, &mut FileHashCache::in_memory());
+    assert_eq!(r.files, 1);
+    assert!(!root.join(".sync/ID.zsync").exists());
+    let sync = axs_legacy::read_sync(&std::fs::read(root.join(".a3s/sync")).unwrap()).unwrap();
+    assert!(sync.children.iter().all(|c| c.name() != ".sync"));
+}

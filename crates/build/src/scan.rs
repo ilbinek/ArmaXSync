@@ -129,13 +129,14 @@ pub fn scan(root: &Path, excluded_files: &[String]) -> Result<Scan> {
             if is_excluded_name(&name, is_dir) {
                 continue;
             }
+            // Excluded entries can be files or whole folders (e.g. `.sync`).
+            if excluded.contains(child_rel.as_str()) {
+                continue;
+            }
             if is_dir {
                 scan.dirs.push(child_rel.clone());
                 rec(&e.path(), &child_rel, excluded, scan)?;
             } else {
-                if excluded.contains(child_rel.as_str()) {
-                    continue;
-                }
                 scan.files.push(ScannedFile {
                     rel: child_rel,
                     abs: e.path(),

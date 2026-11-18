@@ -84,7 +84,7 @@ pub struct BuildArgs {
     /// Do not generate .zsync files.
     #[arg(long)]
     no_zsync: bool,
-    /// Exclude a file (relative path); repeatable.
+    /// Exclude a file or folder (relative path); repeatable.
     #[arg(long = "exclude")]
     exclude: Vec<String>,
     /// Folder clients must not clean up (relative path); repeatable.
