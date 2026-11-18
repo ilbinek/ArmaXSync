@@ -609,3 +609,52 @@ async fn delta_push() {
     );
     assert!(!dest.path().join("@mod/addons/copy.pbo").exists());
 }
+
+/// A job that is still queued (waiting for its repository) can be cancelled.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancel_queued_job() {
+    use armaxsync_server::jobs::{JobKind, JobManager};
+    use armaxsync_server::repos_api::{create_repo, NewRepo};
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        data_dir: dir.path().to_path_buf(),
+        ..Default::default()
+    };
+    let st = build_state(cfg).await.unwrap();
+    let rec = create_repo(
+        &st,
+        None,
+        NewRepo {
+            slug: "q".into(),
+            name: "Q".into(),
+            description: String::new(),
+            game: Default::default(),
+            mode: Default::default(),
+            path: None,
+            settings: None,
+        },
+    )
+    .await
+    .unwrap();
+    // Simulate a long job holding the repository.
+    let lock = st.jobs.repo_lock(rec.id);
+    let _busy = lock.lock().await;
+    let id = JobManager::submit(&st, JobKind::Build, Some(rec.id), None)
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(st.jobs.cancel(id), "queued job should be cancellable");
+    let mut status = String::new();
+    for _ in 0..50 {
+        status = st
+            .db
+            .call(move |c| c.query_row("SELECT status FROM jobs WHERE id=?1", [id], |r| r.get(0)))
+            .await
+            .unwrap();
+        if status != "queued" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(status, "cancelled");
+}

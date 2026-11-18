@@ -186,12 +186,36 @@ impl JobManager {
         jm.inner.running.lock().unwrap().insert(id, ctx.clone());
         let state = state.clone();
         tokio::spawn(async move {
+            // Wait for the repository lock and a worker slot, but give up as
+            // soon as the job is cancelled while still queued.
             let repo_lock = repo_id.map(|r| jm.repo_lock(r));
-            let _repo_guard = match &repo_lock {
-                Some(l) => Some(l.lock().await),
-                None => None,
+            let acquire = async {
+                let guard = match repo_lock {
+                    Some(l) => Some(l.lock_owned().await),
+                    None => None,
+                };
+                let permit = jm.sem.clone().acquire_owned().await;
+                (guard, permit)
             };
-            let _permit = jm.sem.clone().acquire_owned().await;
+            let (_repo_guard, _permit) = tokio::select! {
+                held = acquire => held,
+                _ = ctx.cancel.cancelled() => {
+                    ctx.log("cancelled while queued");
+                    let log = ctx.log.lock().unwrap().clone();
+                    let _ = state
+                        .db
+                        .call(move |c| {
+                            c.execute(
+                                "UPDATE jobs SET status='cancelled', finished_at=?1, error='cancelled', log=?2 WHERE id=?3",
+                                rusqlite::params![now(), log, id],
+                            )
+                        })
+                        .await;
+                    let _ = ctx.tx.send(JobEvent::Status { status: "cancelled".into() });
+                    jm.inner.running.lock().unwrap().remove(&id);
+                    return;
+                }
+            };
             let _ = state
                 .db
                 .call(move |c| {
