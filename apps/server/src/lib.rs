@@ -34,10 +34,15 @@ pub async fn build_state(cfg: config::Config) -> anyhow::Result<Shared> {
         cfg.trash_dir(),
         cfg.cache_dir(),
     ] {
-        std::fs::create_dir_all(&d)?;
+        std::fs::create_dir_all(&d)
+            .map_err(|e| anyhow::anyhow!("cannot create {}: {e}", d.display()))?;
     }
-    let db = db::Db::open(&cfg.db_path())?;
-    let secrets = crypto::SecretBox::load_or_create(&cfg.data_dir.join("secret.key"))?;
+    let db_path = cfg.db_path();
+    let db = db::Db::open(&db_path)
+        .map_err(|e| anyhow::anyhow!("cannot open database {}: {e:#}", db_path.display()))?;
+    let key_path = cfg.data_dir.join("secret.key");
+    let secrets = crypto::SecretBox::load_or_create(&key_path)
+        .map_err(|e| anyhow::anyhow!("cannot read or create {}: {e:#}", key_path.display()))?;
     let max = if cfg.max_downloads == 0 {
         state::MAX_PERMITS
     } else {
