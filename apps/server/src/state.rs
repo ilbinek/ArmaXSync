@@ -238,6 +238,7 @@ pub struct AppState {
     pub global_limiter: Arc<RateLimiter>,
     pub global_downloads: Arc<Semaphore>,
     pub started: i64,
+    pub updates: crate::updates::Updates,
 }
 
 pub type Shared = Arc<AppState>;

@@ -157,6 +157,17 @@ tasks:
       - bash tools/java-compat/e2e-rust-client.sh
       - bash tools/java-compat/e2e-legacy-vs-server.sh
 
+  # ---------------------------------------------------------------- release --
+  release:bump:
+    desc: 'Set the version everywhere and open its CHANGELOG section, e.g. task release:bump -- 0.2.0'
+    cmds:
+      - bash tools/release/bump.sh {{.CLI_ARGS}}
+
+  release:check:
+    desc: 'Check that a tag matches the recorded versions, e.g. task release:check -- v0.2.0'
+    cmds:
+      - bash tools/release/check-version.sh {{.CLI_ARGS}}
+
   # ------------------------------------------------------------------ hygiene --
   fmt:
     desc: Format Rust code

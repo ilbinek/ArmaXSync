@@ -247,7 +247,9 @@ async fn detail(
 struct RepoPatch {
     name: Option<String>,
     description: Option<String>,
-    settings: Option<RepoSettings>,
+    /// Settings to change: top-level keys present here replace the stored
+    /// ones, absent keys are kept (so editors only send their own section).
+    settings: Option<serde_json::Value>,
     /// New mirror password (plain text; stored encrypted). Empty clears it.
     mirror_password: Option<String>,
     /// Rebuild afterwards (default: when published metadata is affected).
@@ -271,7 +273,16 @@ async fn update(
     if let Some(d) = u.description {
         desc = d;
     }
-    if let Some(mut s) = u.settings {
+    if let Some(patch) = u.settings {
+        let serde_json::Value::Object(patch) = patch else {
+            return Err(ApiError::bad("settings must be an object"));
+        };
+        let mut merged = serde_json::to_value(&old.settings).map_err(ApiError::internal)?;
+        for (k, v) in patch {
+            merged[k] = v;
+        }
+        let mut s: RepoSettings = serde_json::from_value(merged)
+            .map_err(|e| ApiError::bad(format!("invalid settings: {e}")))?;
         // Keep the sealed mirror password unless replaced.
         if let (Some(new_m), Some(old_m)) = (s.mirror.as_mut(), old.settings.mirror.as_ref()) {
             new_m.password_sealed = old_m.password_sealed.clone();

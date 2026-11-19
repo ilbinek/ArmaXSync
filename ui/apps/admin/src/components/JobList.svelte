@@ -1,47 +1,70 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { date } from "@axs/kit";
-  import { get } from "../api";
+  import { DataTable, Badge, Button, SegmentedControl, ago, date, duration, errorText } from "@axs/kit";
+  import { ListChecks } from "@lucide/svelte";
+  import { get, jobLabel, type Job } from "../api";
+  import { openJob, session } from "../session.svelte";
 
-  let { repo = "", onopen }: { repo?: string; onopen: (id: number) => void } = $props();
-  let jobs = $state<any[]>([]);
-  let timer: any;
+  let { repo = "", limit = 50, compact = false }: { repo?: string; limit?: number; compact?: boolean } = $props();
 
-  async function load() {
-    jobs = await get(`/jobs?limit=100${repo ? "&repo=" + encodeURIComponent(repo) : ""}`);
+  let jobs = $state<Job[] | null>(null);
+  let error = $state<string | null>(null);
+  let status = $state<"" | "active" | "failed" | "succeeded">("");
+  let more = $state(false);
+  let timer: ReturnType<typeof setInterval>;
+
+  async function load(append = false) {
+    try {
+      const before = append && jobs?.length ? `&before=${jobs[jobs.length - 1].id}` : "";
+      const page = await get<Job[]>(`/jobs?limit=${limit}${repo ? `&repo=${encodeURIComponent(repo)}` : ""}${status ? `&status=${status}` : ""}${before}`);
+      jobs = append && jobs ? [...jobs, ...page] : page;
+      more = !compact && page.length === limit;
+      error = null;
+    } catch (e) {
+      error = errorText(e);
+    }
   }
   onMount(() => {
     load();
-    timer = setInterval(load, 4000);
+    // Refresh while visible; finished jobs also refresh via session.jobsDone.
+    timer = setInterval(() => !document.hidden && (!jobs || jobs.length <= limit) && load(), 5000);
   });
   onDestroy(() => clearInterval(timer));
+  let seen = session.jobsDone;
+  $effect(() => {
+    if (session.jobsDone !== seen) {
+      seen = session.jobsDone;
+      load();
+    }
+  });
 
-  const cls = (s: string) => (s === "succeeded" ? "ok" : s === "failed" || s === "interrupted" ? "err" : s === "running" ? "info" : "warn");
-  function took(j: any) {
-    if (!j.started_at || !j.finished_at) return "";
-    const s = (j.finished_at - j.started_at) / 1000;
-    return s < 60 ? `${s.toFixed(1)} s` : `${(s / 60).toFixed(1)} min`;
-  }
+  const tone = (s: string) => (s === "succeeded" ? "ok" : s === "failed" || s === "interrupted" ? "err" : s === "running" ? "accent" : s === "cancelled" ? "neutral" : "warn");
+  const took = (j: Job) => (j.started_at && j.finished_at ? duration((j.finished_at - j.started_at) / 1000) : j.started_at ? "running" : "");
+  const columns = $derived([
+    { key: "job", label: "Job" },
+    ...(repo ? [] : [{ key: "repo", label: "Repository", hideSm: true }]),
+    { key: "status", label: "Status", width: "130px" },
+    ...(compact ? [] : [{ key: "started", label: "Started", width: "150px", hideSm: true }, { key: "took", label: "Took", width: "90px", hideSm: true }]),
+  ]);
 </script>
 
-{#if jobs.length === 0}
-  <div class="card empty">No jobs yet.</div>
-{:else}
-  <div class="card flush">
-    <table>
-      <thead><tr><th>#</th><th>Job</th>{#if !repo}<th>Repository</th>{/if}<th>Status</th><th class="hide-sm">Started</th><th class="hide-sm">Duration</th></tr></thead>
-      <tbody>
-        {#each jobs as j}
-          <tr class="clickable" onclick={() => onopen(j.id)}>
-            <td>{j.id}</td>
-            <td>{j.kind}{#if j.summary?.revision} <span class="muted small">→ rev {j.summary.revision}</span>{/if}</td>
-            {#if !repo}<td>{j.repo ?? "-"}</td>{/if}
-            <td><span class="badge {cls(j.status)}">{j.status}</span>{#if j.error}<div class="small muted" title={j.error}>{j.error.slice(0, 80)}</div>{/if}</td>
-            <td class="hide-sm">{date(j.started_at ?? j.created_at)}</td>
-            <td class="hide-sm">{took(j)}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
-{/if}
+{#snippet filters()}
+  <SegmentedControl size="sm" bind:value={status} onchange={() => load()} options={[{ value: "", label: "All" }, { value: "active", label: "Running" }, { value: "failed", label: "Failed" }, { value: "succeeded", label: "Succeeded" }]} />
+{/snippet}
+
+<DataTable rows={jobs} {columns} loading={!jobs} {error} onretry={() => load()} key={(j) => j.id} onrowclick={(j) => openJob(j.id)} emptyIcon={ListChecks} emptyTitle="No jobs" emptyText="Builds, publishes and mirror pulls appear here." dense={compact} toolbar={compact ? undefined : filters}>
+  {#snippet cell(j, c)}
+    {#if c.key === "job"}
+      <div class="stack" style="gap:1px;min-width:0">
+        <span><span class="strong">{jobLabel(j.kind)}</span> <span class="subtle xs">#{j.id}</span>{#if j.summary?.revision}<span class="muted small">&nbsp;→ revision {j.summary.revision}</span>{/if}</span>
+        {#if j.error && j.status !== "succeeded"}<span class="xs err-text ellipsis" title={j.error} style="max-width:520px">{j.error}</span>{/if}
+        {#if compact}<span class="xs subtle">{ago(j.created_at)}</span>{/if}
+      </div>
+    {:else if c.key === "repo"}<span class="small">{j.repo ?? "–"}</span>
+    {:else if c.key === "status"}<Badge tone={tone(j.status)} dot pulse={j.status === "running"}>{j.status}</Badge>
+    {:else if c.key === "started"}<span class="small muted" title={date(j.started_at ?? j.created_at)}>{ago(j.started_at ?? j.created_at)}</span>
+    {:else if c.key === "took"}<span class="small muted tabular">{took(j)}</span>
+    {/if}
+  {/snippet}
+</DataTable>
+{#if more}<div class="row" style="justify-content:center;padding:10px"><Button size="sm" onclick={() => load(true)}>Older jobs</Button></div>{/if}

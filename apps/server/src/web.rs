@@ -1,5 +1,8 @@
 //! Web UI: server-rendered public pages (`/`, `/repo/<slug>`) and the
 //! embedded admin single-page app (`/admin/*`).
+//!
+//! The public pages link the admin build's stylesheet (design tokens,
+//! components, bundled fonts), so both share one look without a second build.
 
 use axum::body::Body;
 use axum::extract::{Path, Request, State};
@@ -50,25 +53,115 @@ fn date(ms: i64) -> String {
         .unwrap_or_default()
 }
 
-const STYLE: &str = r#"
-:root{--bg:#f6f7f9;--fg:#15181d;--muted:#5b6472;--card:#fff;--line:#e3e6ea;--accent:#2f6fde;--accent-fg:#fff;--chip:#eef2f8}
-@media (prefers-color-scheme: dark){:root{--bg:#111418;--fg:#e8ebef;--muted:#9aa4b2;--card:#1a1f25;--line:#2a313a;--accent:#5b8ff0;--accent-fg:#0b0f14;--chip:#232a33}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-header{border-bottom:1px solid var(--line);background:var(--card)}header .in{display:flex;align-items:center;gap:12px;padding:14px 16px;max-width:960px;margin:0 auto}
-header b{font-size:17px}header a{color:var(--muted);text-decoration:none;margin-left:auto}main{max-width:960px;margin:0 auto;padding:20px 16px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:14px}
-.card h2{margin:0 0 4px;font-size:18px}.muted{color:var(--muted)}.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
-.btn{display:inline-block;padding:8px 14px;border-radius:8px;background:var(--accent);color:var(--accent-fg);text-decoration:none;font-weight:600;border:0;cursor:pointer;font:inherit}
-.btn.ghost{background:var(--chip);color:var(--fg)}code{background:var(--chip);padding:3px 6px;border-radius:6px;font-size:13px;word-break:break-all}
-.chips span{display:inline-block;background:var(--chip);border-radius:999px;padding:2px 10px;margin:2px;font-size:13px}
-table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:6px 4px;border-bottom:1px solid var(--line);font-size:14px;vertical-align:top}
+/// Fallback styles when no admin UI is embedded (dev builds without `pnpm build`).
+const FALLBACK_STYLE: &str = r#"
+:root{--bg:#0b0d10;--surface-1:#13171b;--surface-2:#191e23;--surface-3:#21272d;--line:#262d35;--line-strong:#36404a;--fg:#e8ebee;--fg-2:#a1abb6;--fg-3:#6f7a86;--accent:#f08a24;--accent-fg:#170c02;--accent-text:#ffa34d;--accent-soft:rgb(240 138 36/.13);--r:5px;--r-lg:8px;--font:system-ui,sans-serif;--font-display:"Arial Narrow",system-ui,sans-serif;--mono:ui-monospace,Consolas,monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--font)}a{color:var(--accent-text)}
+.card{background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px}
+.btn{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--fg);border-radius:var(--r);font:inherit;font-weight:600;text-decoration:none;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}.muted{color:var(--fg-2)}
+.badge,.chip{display:inline-flex;align-items:center;padding:1px 8px;border-radius:3px;background:var(--surface-3);font-size:12.5px}
+code{font-family:var(--mono);font-size:12.5px}
 "#;
 
-fn page(title: &str, body: &str) -> Html<String> {
+/// Page layout on top of the shared kit styles.
+const PUBLIC_STYLE: &str = r#"
+body{min-height:100vh;display:flex;flex-direction:column}
+.top{border-bottom:1px solid var(--line);background:var(--surface-1)}
+.top .in,.wrap{width:100%;max-width:980px;margin:0 auto;padding:0 18px}
+.top .in{display:flex;align-items:center;gap:14px;height:62px}
+.brand{display:flex;align-items:center;gap:10px;color:var(--fg);text-decoration:none!important;line-height:1}
+.brand b{font-family:var(--font-display);font-size:20px;letter-spacing:.06em;text-transform:uppercase}.brand b i{font-style:normal;color:var(--accent)}
+.brand small{font-family:var(--font-display);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--fg-3)}
+.top nav{margin-left:auto;display:flex;gap:6px}
+.wrap{flex:1;padding-bottom:40px}
+.hero{padding:34px 0 6px}.hero h1{font-family:var(--font-display);font-size:34px;text-transform:uppercase;letter-spacing:.03em;margin:0 0 8px}
+.hero p{margin:0;color:var(--fg-2);max-width:66ch}
+.stackp{display:flex;flex-direction:column;gap:14px;margin-top:18px}
+.rc h2{font-family:var(--font-display);font-size:26px;text-transform:uppercase;letter-spacing:.03em;margin:0}
+.rc h2 a{color:inherit;text-decoration:none}.rc h2 a:hover{color:var(--accent-text)}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}
+.desc{margin:12px 0 0;color:var(--fg-2)}
+.acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.cf{display:flex;flex-direction:column;gap:5px;margin-top:14px}.cf label{font-size:12.5px;font-weight:600;color:var(--fg-2)}
+.cfbox{display:flex;align-items:center;gap:6px;padding:4px 4px 4px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg)}
+.cfbox code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:none;border:0;padding:0;color:var(--fg)}
+.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;color:var(--fg-2)}.steps b{color:var(--fg)}
+.sec h3{margin:0 0 12px}
+.mods{display:flex;flex-wrap:wrap;gap:6px}.mods .chip{font-family:var(--mono);font-size:12px}
+.ev{padding:10px 0;border-bottom:1px solid var(--line)}.ev:last-child{border-bottom:0}.ev small{color:var(--fg-2)}
+.cl{display:flex;gap:14px;padding:10px 0;border-bottom:1px solid var(--line)}.cl:last-child{border-bottom:0}
+.cl .rev{font-family:var(--font-display);font-weight:700;font-size:16px;min-width:46px;color:var(--accent-text)}
+.cl .when{font-size:12.5px;color:var(--fg-3);margin-bottom:4px}.cl .b{display:flex;flex-direction:column;gap:4px;min-width:0}
+.cl code{background:none;border:0;padding:0;overflow-wrap:anywhere}
+details summary{cursor:pointer;color:var(--accent-text);margin-top:10px}
+.grid2p{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.srv{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.srv:last-child{border-bottom:0}
+footer{color:var(--fg-3);font-size:12.5px;text-align:center;padding:22px 0}
+@media (max-width:640px){.hero h1{font-size:26px}.top small{display:none}.top nav .ghost:first-child{display:none}}
+"#;
+
+const LOGO: &str = r#"<svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="6" fill="var(--accent-soft)" stroke="var(--accent)" stroke-opacity=".45"/><path d="M16 4v4M16 24v4M4 16h4M24 16h4" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/><path d="M10.5 11.5l5.5 4.5-5.5 4.5" fill="none" stroke="var(--fg)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M21.5 11.5l-5.5 4.5 5.5 4.5" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>"#;
+
+const COPY_SCRIPT: &str = "function axsCopy(t){if(navigator.clipboard&&window.isSecureContext)return navigator.clipboard.writeText(t).then(()=>true,()=>false);var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.top='-1000px';document.body.appendChild(a);a.select();var ok=false;try{ok=document.execCommand('copy')}catch(e){}document.body.removeChild(a);return Promise.resolve(ok)}document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{axsCopy(b.dataset.copy).then(ok=>{b.textContent=ok?'Copied':'Press Ctrl+C';setTimeout(()=>b.textContent='Copy',1500)})}))";
+
+/// URL of the admin build's stylesheet, if a UI is embedded (or `ui_dir` set).
+fn kit_css(state: &Shared) -> Option<String> {
+    use std::sync::OnceLock;
+    static EMBEDDED: OnceLock<Option<String>> = OnceLock::new();
+    if let Some(dir) = &state.cfg.ui_dir {
+        return std::fs::read_dir(dir.join("assets"))
+            .ok()?
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .find(|n| n.ends_with(".css"))
+            .map(|n| format!("/admin/assets/{n}"));
+    }
+    EMBEDDED
+        .get_or_init(|| {
+            AdminAssets::iter()
+                .find(|f| f.starts_with("assets/") && f.ends_with(".css"))
+                .map(|f| format!("/admin/{f}"))
+        })
+        .clone()
+}
+
+fn release_url() -> String {
+    format!(
+        "https://github.com/{}/releases/latest",
+        crate::updates::RELEASE_REPO
+    )
+}
+
+fn page(state: &Shared, title: &str, description: &str, body: &str) -> Html<String> {
+    let css = match kit_css(state) {
+        Some(href) => format!("<link rel=\"stylesheet\" href=\"{}\">", esc(&href)),
+        None => format!("<style>{FALLBACK_STYLE}</style>"),
+    };
+    let title = esc(title);
+    let desc = esc(description);
+    let rel = esc(&release_url());
+    let ver = env!("CARGO_PKG_VERSION");
     Html(format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><style>{STYLE}</style></head><body><header><div class=\"in\"><b>ArmaXSync</b><span class=\"muted\">mod repositories</span><a href=\"/admin/\">Admin</a></div></header><main>{body}</main><script>function axsCopy(t){{if(navigator.clipboard&&window.isSecureContext)return navigator.clipboard.writeText(t).then(()=>true,()=>false);var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.top='-1000px';document.body.appendChild(a);a.select();var ok=false;try{{ok=document.execCommand('copy')}}catch(e){{}}document.body.removeChild(a);return Promise.resolve(ok)}}document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{{axsCopy(b.dataset.copy).then(ok=>{{b.textContent=ok?'Copied':'Press Ctrl+C';setTimeout(()=>b.textContent='Copy',1500)}})}}))</script></body></html>",
-        esc(title)
+        "<!doctype html><html lang=\"en\" data-theme=\"system\"><head><meta charset=\"utf-8\">\
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+<title>{title}</title><meta name=\"description\" content=\"{desc}\">\
+<meta property=\"og:title\" content=\"{title}\"><meta property=\"og:description\" content=\"{desc}\"><meta property=\"og:type\" content=\"website\">\
+<meta name=\"theme-color\" content=\"#f08a24\"><meta name=\"color-scheme\" content=\"dark light\">\
+<link rel=\"icon\" type=\"image/svg+xml\" href=\"/admin/favicon.svg\">\
+{css}<style>{PUBLIC_STYLE}</style></head><body>\
+<header class=\"top\"><div class=\"in\"><a class=\"brand\" href=\"/\">{LOGO}<span><b>Arma<i>X</i>Sync</b><br><small>Mod repositories</small></span></a>\
+<nav><a class=\"btn ghost sm\" href=\"{rel}\" rel=\"noopener\">Get ArmaXSync</a><a class=\"btn ghost sm\" href=\"/admin/\">Admin</a></nav></div></header>\
+<main class=\"wrap\">{body}</main><footer>Powered by ArmaXSync {ver}</footer><script>{COPY_SCRIPT}</script></body></html>"
     ))
+}
+
+fn copy_field(label: &str, value: &str) -> String {
+    let v = esc(value);
+    format!(
+        "<div class=\"cf\"><label>{}</label><div class=\"cfbox\"><code title=\"{v}\">{v}</code><button class=\"btn sm\" data-copy=\"{v}\">Copy</button></div></div>",
+        esc(label)
+    )
 }
 
 fn repo_card(state: &Shared, rt: &crate::state::RepoRuntime, link: bool) -> String {
@@ -81,31 +174,46 @@ fn repo_card(state: &Shared, rt: &crate::state::RepoRuntime, link: bool) -> Stri
     };
     let deep = format!("armaxsync://add?url={}&name={}", enc(&url), enc(&r.name));
     let title = if link {
-        format!(
-            "<a href=\"/repo/{0}\" style=\"color:inherit\">{1}</a>",
-            esc(&r.slug),
-            esc(&r.name)
-        )
+        format!("<a href=\"/repo/{}\">{}</a>", esc(&r.slug), esc(&r.name))
     } else {
         esc(&r.name)
     };
-    let private = if r.settings.visibility == Visibility::Private {
-        " · private (login required)"
+    let mut meta = vec![
+        format!("<span class=\"badge\">{}</span>", esc(&r.game.to_string())),
+        format!("<span class=\"badge plain\">Revision {}</span>", p.revision),
+        format!(
+            "<span class=\"badge plain\">{} files · {}</span>",
+            p.file_count,
+            human(p.total_size)
+        ),
+    ];
+    if p.build_date > 0 {
+        meta.push(format!(
+            "<span class=\"badge plain\">Updated {}</span>",
+            date(p.build_date)
+        ));
+    }
+    if r.settings.visibility == Visibility::Private {
+        meta.push("<span class=\"badge warn\">Login required</span>".into());
+    }
+    let desc = if r.description.is_empty() {
+        String::new()
     } else {
-        ""
+        format!("<p class=\"desc\">{}</p>", esc(&r.description))
+    };
+    let details = if link {
+        format!(
+            "<a class=\"btn\" href=\"/repo/{}\">Details</a>",
+            esc(&r.slug)
+        )
+    } else {
+        String::new()
     };
     format!(
-        "<div class=\"card\"><h2>{title}</h2><div class=\"muted\">{} · revision {} · {} files · {}{}{}</div>{}<div class=\"row\"><a class=\"btn\" href=\"{}\">Open in ArmaXSync</a></div><div class=\"row\"><span class=\"muted\">Arma3Sync auto-config:</span><code>{}</code><button class=\"btn ghost\" data-copy=\"{}\">Copy</button></div></div>",
-        esc(&r.game.to_string()),
-        p.revision,
-        p.file_count,
-        human(p.total_size),
-        if p.build_date > 0 { format!(" · updated {}", date(p.build_date)) } else { String::new() },
-        private,
-        if r.description.is_empty() { String::new() } else { format!("<p>{}</p>", esc(&r.description)) },
+        "<article class=\"card rc\"><h2>{title}</h2><div class=\"meta\">{}</div>{desc}<div class=\"acts\"><a class=\"btn primary\" href=\"{}\">Open in ArmaXSync</a>{details}</div>{}</article>",
+        meta.join(""),
         esc(&deep),
-        esc(&auto),
-        esc(&auto)
+        copy_field("ArmA3Sync auto-config URL", &auto),
     )
 }
 
@@ -117,120 +225,166 @@ async fn index(State(state): State<Shared>) -> Html<String> {
         .map(|rt| repo_card(&state, rt, true))
         .collect();
     let body = if cards.is_empty() {
-        "<div class=\"card muted\">No public repositories yet.</div>".to_owned()
+        "<div class=\"card muted\" style=\"margin-top:18px\">No public repositories yet.</div>"
+            .to_owned()
     } else {
-        cards
+        format!("<div class=\"stackp\">{cards}</div>")
     };
-    page("ArmaXSync repositories", &body)
+    page(
+        &state,
+        "Mod repositories",
+        "Arma mod repositories hosted with ArmaXSync.",
+        &format!(
+            "<section class=\"hero\"><h1>Mod repositories</h1><p>Install ArmaXSync, then click <b>Open in ArmaXSync</b> to add a repository. ArmA3Sync users can paste the auto-config URL instead.</p></section>{body}"
+        ),
+    )
+}
+
+fn not_found(state: &Shared, what: &str) -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        page(
+            state,
+            "Not found",
+            "",
+            &format!(
+                "<section class=\"hero\"><h1>Not found</h1><p>{}</p><p style=\"margin-top:14px\"><a class=\"btn\" href=\"/\">All repositories</a></p></section>",
+                esc(what)
+            ),
+        ),
+    )
+        .into_response()
+}
+
+fn changelog_entry(c: &axs_model::ChangelogEntry) -> String {
+    let mut parts = vec![];
+    for (l, v, tone) in [
+        ("Added", &c.new_addons, "ok"),
+        ("Updated", &c.updated_addons, "info"),
+        ("Removed", &c.deleted_addons, "err"),
+    ] {
+        if !v.is_empty() {
+            parts.push(format!(
+                "<div><span class=\"badge {tone}\">{l}</span> <code>{}</code></div>",
+                esc(&v.join(", "))
+            ));
+        }
+    }
+    if parts.is_empty() {
+        parts.push(format!(
+            "<div class=\"muted\">{}</div>",
+            if c.content_updated {
+                "Content updated"
+            } else {
+                "No content change"
+            }
+        ));
+    }
+    format!(
+        "<div class=\"cl\"><span class=\"rev\">#{}</span><div class=\"b\"><div class=\"when\">{}</div>{}</div></div>",
+        c.revision,
+        date(c.build_date),
+        parts.join("")
+    )
 }
 
 async fn repo_page(State(state): State<Shared>, Path(slug): Path<String>) -> Response {
     let Some(rt) = state.repo(&slug) else {
-        return (
-            StatusCode::NOT_FOUND,
-            page(
-                "Not found",
-                "<div class=\"card\">Repository not found.</div>",
-            ),
-        )
-            .into_response();
+        return not_found(&state, "This repository does not exist.");
     };
-    if !rt.record().settings.listed {
-        return (
-            StatusCode::NOT_FOUND,
-            page(
-                "Not found",
-                "<div class=\"card\">Repository not found.</div>",
-            ),
-        )
-            .into_response();
+    let r = rt.record();
+    if !r.settings.listed {
+        return not_found(&state, "This repository does not exist.");
     }
-    let mut body = repo_card(&state, &rt, false);
+    let private = r.settings.visibility == Visibility::Private;
+    let url = state.cfg.repo_url(&r.slug);
+    let mut body = format!("<div class=\"stackp\">{}", repo_card(&state, &rt, false));
+    body.push_str(&format!(
+        "<section class=\"card sec\"><h3>How to join</h3><ol class=\"steps\"><li><b>Install ArmaXSync</b> from <a href=\"{rel}\" rel=\"noopener\">the download page</a> (Windows and Linux).</li><li>Click <b>Open in ArmaXSync</b> above, choose a download folder and start the download.</li><li>Start the game from the <b>Play</b> page; the repository's mods are selected for you.</li><li><b>Still on ArmA3Sync?</b> Add a repository with the auto-config URL above.</li></ol>{}</section>",
+        copy_field("Repository URL", &url),
+        rel = esc(&release_url()),
+    ));
     if let Some(m) = crate::repos_api::manifest_of(&rt) {
-        if !m.addons.is_empty() {
-            body.push_str("<div class=\"card\"><h2>Mods</h2><div class=\"chips\">");
-            for a in &m.addons {
-                body.push_str(&format!(
-                    "<span>{}</span>",
-                    esc(axs_model::paths::file_name(a))
-                ));
-            }
-            body.push_str("</div></div>");
-        }
+        let mut cols = String::new();
         if !m.events.is_empty() {
-            body.push_str("<div class=\"card\"><h2>Events</h2><table>");
+            cols.push_str("<section class=\"card sec\"><h3>Events</h3>");
             for e in &m.events {
-                body.push_str(&format!(
-                    "<tr><td><b>{}</b><br><span class=\"muted\">{}</span></td><td>{}</td></tr>",
+                let req = e.addons.iter().filter(|a| !a.optional).count();
+                let opt = e.addons.len() - req;
+                cols.push_str(&format!(
+                    "<div class=\"ev\"><b>{}</b><br><small>{}{} required{}</small></div>",
                     esc(&e.name),
-                    esc(e.description.as_deref().unwrap_or("")),
-                    e.addons
-                        .iter()
-                        .map(|a| format!(
-                            "{}{}",
-                            esc(&a.name),
-                            if a.optional { " (optional)" } else { "" }
-                        ))
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    e.description
+                        .as_deref()
+                        .map(|d| format!("{} · ", esc(d)))
+                        .unwrap_or_default(),
+                    req,
+                    if opt > 0 {
+                        format!(", {opt} optional")
+                    } else {
+                        String::new()
+                    }
                 ));
             }
-            body.push_str("</table></div>");
+            cols.push_str("</section>");
         }
         if !m.servers.is_empty() {
-            body.push_str("<div class=\"card\"><h2>Servers</h2><table>");
+            cols.push_str("<section class=\"card sec\"><h3>Servers</h3>");
             for s in &m.servers {
-                body.push_str(&format!(
-                    "<tr><td>{}</td><td><code>{}:{}</code></td></tr>",
+                cols.push_str(&format!(
+                    "<div class=\"srv\"><b>{}</b><code>{}:{}</code></div>",
                     esc(&s.name),
                     esc(&s.host),
                     s.port
                 ));
             }
-            body.push_str("</table></div>");
+            cols.push_str("</section>");
         }
-        if !m.changelogs.is_empty() {
-            body.push_str("<div class=\"card\"><h2>Changelog</h2><table>");
-            for c in m.changelogs.iter().rev() {
-                let mut parts = vec![];
-                for (l, v) in [
-                    ("new", &c.new_addons),
-                    ("updated", &c.updated_addons),
-                    ("removed", &c.deleted_addons),
-                ] {
-                    if !v.is_empty() {
-                        parts.push(format!("<b>{l}:</b> {}", esc(&v.join(", "))));
-                    }
-                }
-                if parts.is_empty() {
-                    parts.push(if c.content_updated {
-                        "content updated".into()
-                    } else {
-                        "<span class=\"muted\">no content change</span>".into()
-                    });
-                }
+        if !cols.is_empty() {
+            body.push_str(&format!("<div class=\"grid2p\">{cols}</div>"));
+        }
+        // Private repositories don't advertise their content.
+        if !private && !m.addons.is_empty() {
+            body.push_str(&format!(
+                "<section class=\"card sec\"><h3>Mods ({})</h3><div class=\"mods\">",
+                m.addons.len()
+            ));
+            for a in &m.addons {
                 body.push_str(&format!(
-                    "<tr><td>#{}<br><span class=\"muted\">{}</span></td><td>{}</td></tr>",
-                    c.revision,
-                    date(c.build_date),
-                    parts.join("<br>")
+                    "<span class=\"chip\">{}</span>",
+                    esc(axs_model::paths::file_name(a))
                 ));
             }
-            body.push_str("</table></div>");
+            body.push_str("</div></section>");
+        }
+        if !m.changelogs.is_empty() {
+            let all: Vec<String> = m.changelogs.iter().rev().map(changelog_entry).collect();
+            body.push_str("<section class=\"card sec\"><h3>Changelog</h3>");
+            body.push_str(&all.iter().take(10).cloned().collect::<String>());
+            if all.len() > 10 {
+                body.push_str(&format!(
+                    "<details><summary>{} older revisions</summary>{}</details>",
+                    all.len() - 10,
+                    all[10..].concat()
+                ));
+            }
+            body.push_str("</section>");
         }
     }
-    page(&rt.record().name, &body).into_response()
+    body.push_str("</div>");
+    let desc = if r.description.is_empty() {
+        format!("{} mod repository for {}", r.name, r.game)
+    } else {
+        r.description.clone()
+    };
+    page(&state, &r.name, &desc, &body).into_response()
 }
 
 /// `/admin/*` (SPA with index.html fallback) and 404 for everything else.
 pub async fn fallback(State(state): State<Shared>, req: Request) -> Response {
     let path = req.uri().path();
     let Some(rest) = path.strip_prefix("/admin") else {
-        return (
-            StatusCode::NOT_FOUND,
-            page("Not found", "<div class=\"card\">Page not found.</div>"),
-        )
-            .into_response();
+        return not_found(&state, "There is no page at this address.");
     };
     let rest = rest.trim_start_matches('/');
     if let Some(dir) = &state.cfg.ui_dir {
@@ -247,7 +401,8 @@ pub async fn fallback(State(state): State<Shared>, req: Request) -> Response {
     }
     let file = if rest.is_empty() { "index.html" } else { rest };
     match AdminAssets::get(file) {
-        Some(f) => asset_response(file, f.data.into_owned(), file.contains("/immutable/")),
+        // Vite content-hashes everything under assets/.
+        Some(f) => asset_response(file, f.data.into_owned(), file.starts_with("assets/")),
         None => match AdminAssets::get("index.html") {
             Some(f) => asset_response("index.html", f.data.into_owned(), false),
             None => StatusCode::NOT_FOUND.into_response(),

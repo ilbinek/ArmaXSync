@@ -20,7 +20,7 @@ use axs_sync::{
 };
 use axs_transport::{RateLimiter, Transport};
 
-pub use config::{AdminSettings, AppConfig, RepoConfig, RepoState};
+pub use config::{AdminSettings, AppConfig, RepoConfig, RepoState, UiPrefs, UpdatePrefs};
 pub use dirs::DataDirs;
 
 #[derive(Debug, thiserror::Error)]

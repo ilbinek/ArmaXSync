@@ -36,6 +36,18 @@ enum Cmd {
     User(UserCmd),
     /// Print an example configuration file.
     ExampleConfig,
+    /// Exit 0 when the running server answers on its bind address.
+    Healthcheck,
+    /// Verify a downloaded release binary (used by the root update helper).
+    #[command(hide = true)]
+    VerifyUpdate {
+        file: PathBuf,
+        #[arg(long)]
+        signature: PathBuf,
+        /// Version of `file`; must be newer than this binary.
+        #[arg(long)]
+        version: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -64,11 +76,27 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
     let cli = Cli::parse();
-    if let Some(Cmd::ExampleConfig) = cli.cmd {
-        print!("{}", config::EXAMPLE);
-        return Ok(());
+    match &cli.cmd {
+        Some(Cmd::ExampleConfig) => {
+            print!("{}", config::EXAMPLE);
+            return Ok(());
+        }
+        // Runs as root from update-helper: must not touch the data folder.
+        Some(Cmd::VerifyUpdate {
+            file,
+            signature,
+            version,
+        }) => {
+            armaxsync_server::updates::verify_update_cli(file, signature, version)?;
+            println!("ok: {} {version} is signed and newer", file.display());
+            return Ok(());
+        }
+        _ => {}
     }
     let cfg = config::Config::load(cli.config.as_deref())?;
+    if let Some(Cmd::Healthcheck) = cli.cmd {
+        return healthcheck(&cfg).await;
+    }
     let st = build_state(cfg).await?;
     match cli.cmd.unwrap_or(Cmd::Serve) {
         Cmd::Serve => serve(st).await,
@@ -122,6 +150,32 @@ async fn main() -> anyhow::Result<()> {
             println!("password updated");
             Ok(())
         }
-        Cmd::ExampleConfig => unreachable!(),
+        Cmd::ExampleConfig | Cmd::Healthcheck | Cmd::VerifyUpdate { .. } => unreachable!(),
     }
+}
+
+async fn healthcheck(cfg: &config::Config) -> anyhow::Result<()> {
+    let mut addr = cfg.bind;
+    if addr.ip().is_unspecified() {
+        addr.set_ip(if addr.is_ipv4() {
+            std::net::Ipv4Addr::LOCALHOST.into()
+        } else {
+            std::net::Ipv6Addr::LOCALHOST.into()
+        });
+    }
+    let url = format!("http://{addr}/healthz");
+    let r = reqwest::Client::new()
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await?;
+    anyhow::ensure!(r.status().is_success(), "{url}: HTTP {}", r.status());
+    let v = r
+        .headers()
+        .get("x-axs-version")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("?")
+        .to_owned();
+    println!("ok {v}");
+    Ok(())
 }

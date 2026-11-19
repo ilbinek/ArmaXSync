@@ -22,6 +22,8 @@ pub enum JobKind {
     Mirror,
     /// Housekeeping (trash, stale uploads/staging).
     Gc,
+    /// Download, verify and stage a server update.
+    SelfUpdate { version: String },
 }
 
 impl JobKind {
@@ -31,6 +33,7 @@ impl JobKind {
             JobKind::Publish { .. } => "publish",
             JobKind::Mirror => "mirror",
             JobKind::Gc => "gc",
+            JobKind::SelfUpdate { .. } => "self_update",
         }
     }
 }
@@ -284,5 +287,6 @@ async fn run(
         }
         JobKind::Mirror => crate::mirror::mirror_job(state, &rt.unwrap(), ctx).await,
         JobKind::Gc => crate::publish::gc_job(state, ctx).await,
+        JobKind::SelfUpdate { version } => crate::updates::install_job(state, version, ctx).await,
     }
 }

@@ -27,6 +27,7 @@ pub fn routes() -> Router<Shared> {
         .route("/repos/{slug}/changesets", get(list).post(create))
         .route("/changesets/{id}", get(get_one).delete(discard))
         .route("/changesets/{id}/ops", post(add_ops))
+        .route("/changesets/{id}/ops/remove", post(remove_ops))
         .route(
             "/changesets/{id}/files/{*path}",
             put(put_file).layer(DefaultBodyLimit::disable()),
@@ -267,6 +268,40 @@ enum OpReq {
         from: String,
         to: String,
     },
+}
+
+#[derive(Deserialize)]
+struct RemoveOps {
+    paths: Vec<String>,
+}
+
+/// Un-stage individual operations (by path) from a draft changeset.
+async fn remove_ops(
+    State(state): State<Shared>,
+    p: Principal,
+    Path(id): Path<i64>,
+    Json(req): Json<RemoveOps>,
+) -> ApiResult<Json<ChangesetOut>> {
+    let (mut cs, _) = load(&state, &p, id).await?;
+    if cs.status != "draft" {
+        return Err(ApiError::conflict(format!("changeset is {}", cs.status)));
+    }
+    let paths: Vec<String> = req
+        .paths
+        .iter()
+        .map(|p| clean_path(p))
+        .collect::<ApiResult<_>>()?;
+    cs.ops.retain(|o| {
+        if !paths.iter().any(|p| p == o.path()) {
+            return true;
+        }
+        if let CsOp::Put { path, .. } = o {
+            let _ = std::fs::remove_file(staged_file(&state, &cs.repo, id, path));
+        }
+        false
+    });
+    save_ops(&state, id, &cs.ops).await?;
+    Ok(Json(cs))
 }
 
 async fn add_ops(

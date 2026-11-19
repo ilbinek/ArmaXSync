@@ -1,98 +1,162 @@
 <script lang="ts">
-  // Form state is initialised once from the props (the page re-mounts after saving).
-  // svelte-ignore state_referenced_locally
   import { onMount } from "svelte";
-  import { date, toast } from "@axs/kit";
-  import { get, put, patch, post } from "../../api";
+  import cronstrue from "cronstrue";
+  import { Section, Field, Switch, TagListInput, PasswordInput, SaveBar, Button, Menu, Alert, EmptyState, useUnsavedGuard, snapshot, toast, toastError, errorText, date, ago } from "@axs/kit";
+  import { FolderSync, Timer, Plus, X, Download, Clock } from "@lucide/svelte";
+  import { get, put, patch, post, type RepoDetail, type MirrorSettings } from "../../api";
+  import { openJob } from "../../session.svelte";
 
-  let { repo, onsaved, onjob }: { repo: any; onsaved: () => void; onjob: (id: number) => void } = $props();
-  const defaults = { url: "", login: null, import_events: true, import_hidden: true, import_servers: false, include: [] };
-  let m = $state($state.snapshot(repo.settings.mirror ?? defaults));
-  let include = $state((repo.settings.mirror?.include ?? []).join("\n"));
+  let { repo, onsaved }: { repo: RepoDetail; onsaved: () => void } = $props();
+
+  type Schedule = { id?: number; kind: "build" | "mirror"; cron: string; enabled: boolean; last_run?: number | null; next_run?: number | null };
+  const blank: MirrorSettings = { url: "", login: null, password_sealed: null, import_events: true, import_hidden: true, import_servers: false, include: [] };
+  // svelte-ignore state_referenced_locally
+  let mirror = $state<MirrorSettings>(structuredClone($state.snapshot(repo.settings.mirror) ?? blank));
+  // svelte-ignore state_referenced_locally
+  let savedMirror = $state(snapshot(repo.settings.mirror ?? blank));
   let password = $state("");
-  let schedules = $state<any[]>([]);
+  let schedules = $state<Schedule[]>([]);
+  let savedSchedules = $state("[]");
+  let saving = $state(false);
+  let error = $state<string | null>(null);
 
-  onMount(async () => {
-    schedules = await get(`/repos/${repo.slug}/schedules`);
-  });
-
-  async function saveMirror() {
+  async function loadSchedules() {
     try {
-      const settings = { ...repo.settings, mirror: m.url.trim() ? { ...m, include: include.split("\n").map((x: string) => x.trim()).filter(Boolean) } : null };
-      await patch(`/repos/${repo.slug}`, { settings, mirror_password: password || undefined, rebuild: false });
-      password = "";
-      toast("Mirror settings saved");
+      schedules = await get<Schedule[]>(`/repos/${repo.slug}/schedules`);
+      savedSchedules = snapshot(schedules.map(strip));
+    } catch (e) {
+      toastError(e);
+    }
+  }
+  onMount(loadSchedules);
+
+  const strip = (s: Schedule) => ({ kind: s.kind, cron: s.cron.trim(), enabled: s.enabled });
+  const mirrorDirty = $derived(snapshot(mirror) !== savedMirror || password !== "");
+  const schedDirty = $derived(snapshot(schedules.map(strip)) !== savedSchedules);
+  const dirty = $derived(mirrorDirty || schedDirty);
+  useUnsavedGuard(() => dirty);
+
+  function describe(cron: string): { text: string; ok: boolean } {
+    try {
+      return { text: cronstrue.toString(cron.trim(), { use24HourTimeFormat: true, verbose: false }), ok: true };
+    } catch {
+      return { text: "Not a valid cron expression", ok: false };
+    }
+  }
+  const invalid = $derived(schedules.some((s) => !describe(s.cron).ok));
+  const urlBad = $derived(!!mirror.url.trim() && !/^(https?|ftp):\/\//i.test(mirror.url.trim()));
+
+  async function save() {
+    if (invalid || urlBad) return;
+    saving = true;
+    error = null;
+    try {
+      if (mirrorDirty && repo.mode === "managed") {
+        await patch(`/repos/${repo.slug}`, {
+          settings: { mirror: mirror.url.trim() ? { ...$state.snapshot(mirror), url: mirror.url.trim() } : null },
+          mirror_password: password || undefined,
+          rebuild: false,
+        });
+        savedMirror = snapshot(mirror);
+        password = "";
+      }
+      if (schedDirty) {
+        await put(`/repos/${repo.slug}/schedules`, schedules.map(strip));
+        await loadSchedules();
+      }
+      toast("Automation saved");
       onsaved();
-    } catch (e: any) {
-      toast(e.message, "err");
+    } catch (e) {
+      error = errorText(e);
+    } finally {
+      saving = false;
     }
   }
+
   async function pullNow() {
-    const r = await post(`/repos/${repo.slug}/mirror`);
-    onjob(r.job);
-  }
-  async function saveSchedules() {
     try {
-      await put(`/repos/${repo.slug}/schedules`, schedules.map((s) => ({ kind: s.kind, cron: s.cron, enabled: s.enabled })));
-      schedules = await get(`/repos/${repo.slug}/schedules`);
-      toast("Schedules saved");
-    } catch (e: any) {
-      toast(e.message, "err");
+      const r = await post<{ job: number }>(`/repos/${repo.slug}/mirror`);
+      openJob(r.job);
+    } catch (e) {
+      toastError(e);
     }
   }
+
   const presets = [
-    ["*/30 * * * *", "every 30 minutes"],
-    ["0 * * * *", "hourly"],
-    ["0 4 * * *", "daily at 04:00"],
+    ["*/30 * * * *", "Every 30 minutes"],
+    ["0 * * * *", "Every hour"],
+    ["0 */6 * * *", "Every 6 hours"],
+    ["0 4 * * *", "Daily at 04:00"],
+    ["0 4 * * 1", "Mondays at 04:00"],
   ];
 </script>
 
-<div class="stack">
+<div class="stack loose narrowish">
   {#if repo.mode === "managed"}
-    <div class="card stack">
-      <h2>Mirror another repository</h2>
-      <div class="small muted">Pull an ArmA3Sync or ArmaXSync repository (HTTP or FTP) into this one. Changes are downloaded with delta transfer and published as this repository's own revisions.</div>
-      <label class="field">Source URL <span class="hint">Auto-config URL (…/.a3s/autoconfig) or repository base URL.</span><input bind:value={m.url} placeholder="https://example.com/arma3/.a3s/autoconfig" /></label>
-      <div class="grid2">
-        <label class="field">Login <input bind:value={m.login} placeholder="anonymous" /></label>
-        <label class="field">Password <input type="password" bind:value={password} placeholder={m.password_sealed ? "unchanged" : ""} /></label>
-      </div>
-      <label class="field">Only these folders <span class="hint">One per line, empty = everything (e.g. @ace).</span><textarea bind:value={include}></textarea></label>
-      <div class="row">
-        <label class="check"><input type="checkbox" bind:checked={m.import_events} /> Import events</label>
-        <label class="check"><input type="checkbox" bind:checked={m.import_hidden} /> Import protected folders</label>
-        <label class="check"><input type="checkbox" bind:checked={m.import_servers} /> Import game servers</label>
-      </div>
-      <div class="row end">
-        {#if repo.has_mirror}<button class="btn" onclick={pullNow}>Pull now</button>{/if}
-        <button class="btn primary" onclick={saveMirror}>Save mirror</button>
-      </div>
-    </div>
+    <Section title="Mirror another repository" icon={FolderSync} description="Pull an ArmA3Sync or ArmaXSync repository (HTTP or FTP) into this one. Changes download as deltas and publish as this repository's own revisions.">
+      {#snippet actions()}{#if repo.has_mirror}<Button size="sm" icon={Download} disabled={mirrorDirty} tip={mirrorDirty ? "Save first" : undefined} onclick={pullNow}>Pull now</Button>{/if}{/snippet}
+      <Field label="Source" hint="Auto-config URL (…/.a3s/autoconfig) or repository URL. Empty = no mirror." error={urlBad ? "Use an http://, https:// or ftp:// URL" : null}>
+        {#snippet children(id)}<input {id} class="mono" bind:value={mirror.url} placeholder="https://example.com/arma3/.a3s/autoconfig" />{/snippet}
+      </Field>
+      {#if mirror.url.trim()}
+        <div class="form-grid">
+          <Field label="Login">{#snippet children(id)}<input {id} bind:value={mirror.login} placeholder="anonymous" />{/snippet}</Field>
+          <Field label="Password" hint={mirror.password_sealed ? "Stored. Type to replace it." : undefined}>
+            {#snippet children(id)}<PasswordInput {id} bind:value={password} placeholder={mirror.password_sealed ? "••••••••" : ""} />{/snippet}
+          </Field>
+        </div>
+        <Field label="Only these folders" hint="Empty = everything. Press Enter after each, e.g. @ace.">
+          {#snippet children(id)}<TagListInput {id} bind:values={mirror.include} placeholder="@ace" />{/snippet}
+        </Field>
+        <div class="stack tight">
+          <Switch bind:checked={mirror.import_events} label="Import events" />
+          <Switch bind:checked={mirror.import_hidden} label="Import protected folders" />
+          <Switch bind:checked={mirror.import_servers} label="Import game servers" />
+        </div>
+      {/if}
+    </Section>
   {/if}
 
-  <div class="card stack">
-    <h2>Schedules</h2>
-    <div class="small muted">Cron expressions in the server's time zone (minute hour day month weekday).</div>
+  <Section title="Schedules" icon={Timer} description="Run jobs automatically. Times use the server's time zone.">
+    {#snippet actions()}
+      <Menu
+        text="Add schedule"
+        icon={Plus}
+        items={[
+          { label: "Rebuild", icon: Clock, onclick: () => schedules.push({ kind: "build", cron: "0 4 * * *", enabled: true }) },
+          ...(repo.has_mirror || mirror.url.trim() ? [{ label: "Mirror pull", icon: FolderSync, onclick: () => schedules.push({ kind: "mirror" as const, cron: "0 */6 * * *", enabled: true }) }] : []),
+        ]}
+      />
+    {/snippet}
     {#each schedules as s, i}
-      <div class="row">
-        <select bind:value={s.kind} style="width:auto">
-          <option value="build">Rebuild</option>
-          {#if repo.mode === "managed"}<option value="mirror">Mirror pull</option>{/if}
-        </select>
-        <input bind:value={s.cron} style="flex:1;min-width:140px" />
-        <select style="width:auto" onchange={(e) => { s.cron = (e.target as HTMLSelectElement).value; }}>
-          <option value="">presets…</option>
-          {#each presets as [c, l]}<option value={c}>{l}</option>{/each}
-        </select>
-        <label class="check"><input type="checkbox" bind:checked={s.enabled} /> on</label>
-        <span class="small muted">{s.next_run ? "next " + date(s.next_run) : ""}</span>
-        <button class="btn ghost small danger" onclick={() => schedules.splice(i, 1)}>✕</button>
+      {@const d = describe(s.cron)}
+      <div class="sch card raised">
+        <div class="row">
+          <select bind:value={s.kind} style="width:auto">
+            <option value="build">Rebuild</option>
+            <option value="mirror">Mirror pull</option>
+          </select>
+          <input class="mono cron" bind:value={s.cron} aria-label="Cron expression" aria-invalid={!d.ok} />
+          <Menu text="Presets" items={presets.map(([c, l]) => ({ label: l, hint: c, onclick: () => (s.cron = c) }))} />
+          <div class="spacer"></div>
+          <Switch bind:checked={s.enabled} label="On" />
+          <button class="btn ghost icon sm" aria-label="Remove schedule" onclick={() => schedules.splice(i, 1)}><X size={15} /></button>
+        </div>
+        <div class="xs" class:err-text={!d.ok} class:muted={d.ok}>
+          {d.text}{#if d.ok && s.next_run && s.enabled} · next {date(s.next_run)}{/if}{#if s.last_run} · last ran {ago(s.last_run)}{/if}
+        </div>
       </div>
-    {:else}<div class="muted small">No schedules.</div>{/each}
-    <div class="row">
-      <button class="btn small" onclick={() => schedules.push({ kind: repo.has_mirror ? "mirror" : "build", cron: "0 * * * *", enabled: true })}>Add schedule</button>
-      <div class="spacer"></div>
-      <button class="btn primary" onclick={saveSchedules}>Save schedules</button>
-    </div>
-  </div>
+    {:else}
+      <EmptyState icon={Timer} title="No schedules" description="E.g. pull from the mirror every 6 hours, or rebuild an external folder nightly." compact />
+    {/each}
+  </Section>
+
+  {#if invalid}<Alert tone="warn">Fix the invalid cron expressions before saving.</Alert>{/if}
+  <SaveBar {dirty} {saving} {error} onsave={save} ondiscard={() => ((mirror = JSON.parse(savedMirror)), (password = ""), loadSchedules())} />
 </div>
+
+<style>
+  .narrowish { max-width: 900px; }
+  .sch { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+  .cron { width: 170px; }
+</style>

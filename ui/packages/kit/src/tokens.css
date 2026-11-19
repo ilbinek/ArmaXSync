@@ -1,0 +1,150 @@
+/* ArmaXSync design tokens. Dark ("tactical") is the default; light is opt-in
+   via <html data-theme="light">, or follows the OS with data-theme="system". */
+
+:root {
+  /* surfaces, from page background up */
+  --bg: #0b0d10;
+  --surface-1: #13171b;
+  --surface-2: #191e23;
+  --surface-3: #21272d;
+  --overlay: rgb(4 6 8 / 0.72);
+  --line: #262d35;
+  --line-strong: #36404a;
+
+  /* text */
+  --fg: #e8ebee;
+  --fg-2: #a1abb6;
+  --fg-3: #6f7a86;
+
+  /* accent: high-visibility orange */
+  --accent: #f08a24;
+  --accent-hover: #ff9e40;
+  --accent-fg: #170c02;
+  --accent-text: #ffa34d;
+  --accent-soft: rgb(240 138 36 / 0.13);
+  --accent-line: rgb(240 138 36 / 0.45);
+
+  /* status */
+  --ok: #4cc27a;
+  --ok-soft: rgb(76 194 122 / 0.13);
+  --warn: #e8b33c;
+  --warn-soft: rgb(232 179 60 / 0.13);
+  --err: #f2665f;
+  --err-soft: rgb(242 102 95 / 0.13);
+  --info: #5ea8ea;
+  --info-soft: rgb(94 168 234 / 0.13);
+
+  --shadow-sm: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 18px 50px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.04);
+  --grid-line: rgb(255 255 255 / 0.025);
+
+  color-scheme: dark;
+
+  /* type */
+  --font: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Inter Variable", system-ui, sans-serif;
+  --mono: "JetBrains Mono Variable", ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
+  --text-xs: 11.5px;
+  --text-sm: 12.5px;
+  --text: 14px;
+  --text-lg: 16px;
+
+  /* spacing (4px grid) */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --s7: 32px;
+  --s8: 48px;
+
+  /* shape */
+  --r-sm: 3px;
+  --r: 5px;
+  --r-lg: 8px;
+
+  /* motion */
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur: 140ms;
+
+  --sidebar-w: 216px;
+  --control-h: 32px;
+
+  /* legacy names (kept while pages migrate) */
+  --panel: var(--surface-1);
+  --panel-2: var(--surface-2);
+  --muted: var(--fg-2);
+  --radius: var(--r);
+  --shadow: var(--shadow-sm);
+}
+
+/* ---------------------------------------------------------------- light ---- */
+:root[data-theme="light"] {
+  --bg: #eef0f3;
+  --surface-1: #ffffff;
+  --surface-2: #f6f7f9;
+  --surface-3: #eceef1;
+  --overlay: rgb(20 24 30 / 0.45);
+  --line: #dde1e6;
+  --line-strong: #c5ccd3;
+  --fg: #12161b;
+  --fg-2: #4f5965;
+  --fg-3: #7a848e;
+  --accent: #c25b06;
+  --accent-hover: #a94f05;
+  --accent-fg: #ffffff;
+  --accent-text: #a64d03;
+  --accent-soft: rgb(194 91 6 / 0.1);
+  --accent-line: rgb(194 91 6 / 0.4);
+  --ok: #18804a;
+  --ok-soft: rgb(24 128 74 / 0.1);
+  --warn: #946100;
+  --warn-soft: rgb(176 120 0 / 0.12);
+  --err: #c2332d;
+  --err-soft: rgb(194 51 45 / 0.09);
+  --info: #1d68ad;
+  --info-soft: rgb(29 104 173 / 0.1);
+  --shadow-sm: 0 1px 2px rgb(16 24 32 / 0.06);
+  --shadow-lg: 0 18px 50px rgb(16 24 32 / 0.18), 0 0 0 1px rgb(16 24 32 / 0.05);
+  --grid-line: rgb(0 0 0 / 0.03);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    --bg: #eef0f3;
+    --surface-1: #ffffff;
+    --surface-2: #f6f7f9;
+    --surface-3: #eceef1;
+    --overlay: rgb(20 24 30 / 0.45);
+    --line: #dde1e6;
+    --line-strong: #c5ccd3;
+    --fg: #12161b;
+    --fg-2: #4f5965;
+    --fg-3: #7a848e;
+    --accent: #c25b06;
+    --accent-hover: #a94f05;
+    --accent-fg: #ffffff;
+    --accent-text: #a64d03;
+    --accent-soft: rgb(194 91 6 / 0.1);
+    --accent-line: rgb(194 91 6 / 0.4);
+    --ok: #18804a;
+    --ok-soft: rgb(24 128 74 / 0.1);
+    --warn: #946100;
+    --warn-soft: rgb(176 120 0 / 0.12);
+    --err: #c2332d;
+    --err-soft: rgb(194 51 45 / 0.09);
+    --info: #1d68ad;
+    --info-soft: rgb(29 104 173 / 0.1);
+    --shadow-sm: 0 1px 2px rgb(16 24 32 / 0.06);
+    --shadow-lg: 0 18px 50px rgb(16 24 32 / 0.18), 0 0 0 1px rgb(16 24 32 / 0.05);
+    --grid-line: rgb(0 0 0 / 0.03);
+    color-scheme: light;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0ms;
+  }
+}

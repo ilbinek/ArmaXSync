@@ -1,0 +1,16 @@
+[Unit]
+Description=Watch for ArmaXSync server update requests
+# The server stages verified releases here when the owner clicks "Update" in
+# the admin UI. If you changed data_dir, override this path:
+#   systemctl edit armaxsync-server-update.path
+#   [Path]
+#   PathExists=
+#   PathExists=/your/data_dir/update/request
+# and set ARMAXSYNC_UPDATE_DIR in armaxsync-server-update.service.
+
+[Path]
+PathExists=/var/lib/armaxsync/update/request
+Unit=armaxsync-server-update.service
+
+[Install]
+WantedBy=multi-user.target

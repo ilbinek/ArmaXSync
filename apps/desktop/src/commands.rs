@@ -42,6 +42,8 @@ pub struct AppStateOut {
     game: GameInfo,
     syncing: Vec<String>,
     version: &'static str,
+    install_kind: crate::updater::InstallKind,
+    release_repo: &'static str,
 }
 
 #[tauri::command]
@@ -63,6 +65,8 @@ pub fn app_state(st: State<'_, AppState>) -> CmdResult<AppStateOut> {
         },
         syncing: st.syncs.lock().unwrap().keys().cloned().collect(),
         version: env!("CARGO_PKG_VERSION"),
+        install_kind: crate::updater::install_kind(c.dirs.portable),
+        release_repo: crate::updater::RELEASE_REPO,
     })
 }
 
@@ -125,8 +129,13 @@ pub async fn repo_check_all(st: State<'_, AppState>) -> CmdResult<Vec<axs_client
     let mut c = client(&st)?;
     let names: Vec<String> = c.repos().iter().map(|r| r.name.clone()).collect();
     let mut out = vec![];
+    // Network failures are reported per repository; a local error (e.g.
+    // saving its state) must not stop the others from being checked.
     for n in names {
-        out.push(c.check(&n).await.map_err(err)?);
+        match c.check(&n).await {
+            Ok(o) => out.push(o),
+            Err(e) => tracing::warn!("check {n}: {e:#}"),
+        }
     }
     Ok(out)
 }

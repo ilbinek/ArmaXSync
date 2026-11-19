@@ -45,6 +45,12 @@ pub struct AuditQuery {
     pub limit: Option<i64>,
     #[serde(default)]
     pub target: Option<String>,
+    /// Exact username.
+    #[serde(default)]
+    pub user: Option<String>,
+    /// Action prefix, e.g. `repo.` or `login`.
+    #[serde(default)]
+    pub action: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -66,14 +72,16 @@ pub async fn list(
     p.require_admin()?;
     let limit = q.limit.unwrap_or(100).clamp(1, 1000);
     let before = q.before.unwrap_or(i64::MAX);
-    let target = q.target.clone();
+    let target = q.target.clone().filter(|s| !s.is_empty());
+    let user = q.user.clone().filter(|s| !s.is_empty());
+    let action = q.action.clone().filter(|s| !s.is_empty());
     let rows = state
         .db
         .call(move |c| {
             let mut st = c.prepare(
-                "SELECT id, at, username, action, target, details, ip FROM audit_log WHERE id < ?1 AND (?2 IS NULL OR target = ?2) ORDER BY id DESC LIMIT ?3",
+                "SELECT id, at, username, action, target, details, ip FROM audit_log WHERE id < ?1 AND (?2 IS NULL OR target = ?2) AND (?4 IS NULL OR username = ?4) AND (?5 IS NULL OR action LIKE ?5 || '%') ORDER BY id DESC LIMIT ?3",
             )?;
-            let r = st.query_map(rusqlite::params![before, target, limit], |r| {
+            let r = st.query_map(rusqlite::params![before, target, limit, user, action], |r| {
                 let d: Option<String> = r.get(5)?;
                 Ok(AuditEntry {
                     id: r.get(0)?,

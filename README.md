@@ -16,7 +16,7 @@ ArmaXSync is **wire-compatible with ArmA3Sync**:
 
 ```sh
 # Docker
-docker compose -f packaging/docker/compose.yaml up -d   # set ARMAXSYNC_PUBLIC_URL first
+docker compose -f packaging/docker/compose.yaml up -d   # ghcr.io/ilbinek/armaxsync-server; set ARMAXSYNC_PUBLIC_URL first
 docker compose logs | grep "setup token"                # open http://host:8080/admin/
 
 # or the static binary
@@ -62,6 +62,43 @@ Legacy command lines are still accepted: `-sync <repo> <dest> <true|false>`, `-b
 | 4 | Network |
 | 5 | Verification failed |
 | 10 | Updates available (with `check --fail-on-update`) |
+
+## Updates
+
+ArmaXSync updates itself from [GitHub releases](https://github.com/ilbinek/ArmaXSync/releases). Every release artifact is signed (minisign), and updates are verified against the public key compiled into the apps.
+
+- **Desktop:** checks at startup and every 6 hours, and shows an update button in the sidebar. Windows installs and AppImages update in place and restart. deb/rpm and portable installs only get the notice. To install updates automatically, enable it in *Settings → Updates*.
+- **Server:** checks every 6 hours (`[updates]` in `config.toml`), and the admin UI shows new versions with their release notes.
+  - **deb/rpm (systemd):** the owner can click **Update and restart**. The server downloads and verifies the binary, then a root-owned helper (`armaxsync-server-update.path`) re-verifies it with the installed binary, swaps it in, restarts the service, and rolls back if the new version does not come up. Set `auto_install = true` to install automatically in the `auto_install_cron` window.
+  - **Docker:** run `docker compose pull && docker compose up -d`, or enable the Watchtower example in `packaging/docker/compose.yaml`.
+
+## Releasing
+
+```sh
+task release:bump -- 0.2.0       # sets the version everywhere and opens its CHANGELOG section
+# edit CHANGELOG.md (it becomes the release notes shown in the apps), commit
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The release workflow builds everything into a draft release and publishes it when all jobs succeed. It produces:
+- server and CLI binaries per target
+- deb/rpm packages
+- desktop installers
+- `latest.json` (desktop updater) and `server-latest.json` (server updater)
+- `SHA256SUMS`
+- Docker images
+
+Tags with a suffix (`v0.2.0-rc.1`) become pre-releases, which updaters ignore.
+
+Repository secrets: `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The matching public key is in `apps/desktop/tauri.conf.json` and `apps/server/src/updates.rs`. To rotate the key, run `pnpm -C ui/apps/desktop tauri signer generate` and update the secrets and both public-key locations.
+
+## UI development
+
+`task ui:build` builds both web UIs. To work on the desktop UI in a normal browser with fake data, no Tauri needed:
+
+```sh
+VITE_MOCK=1 pnpm -C ui dev:desktop     # http://localhost:1420  (?empty = first run, ?theme=light)
+```
 
 ## Building
 

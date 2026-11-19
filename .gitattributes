@@ -5,3 +5,4 @@
 *.png binary
 *.ico binary
 *.icns binary
+apps/server/tests/fixtures/update/* binary

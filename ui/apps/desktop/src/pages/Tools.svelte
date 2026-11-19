@@ -1,21 +1,25 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import { toast } from "@axs/kit";
-  import { call, pickFolder, pickFile, selectedAddons, type Profile } from "../api";
-  import { app, refresh } from "../store.svelte";
+  import { PageHeader, Tabs, Section, Button, Field, PathInput, Switch, SegmentedControl, TagListInput, CopyField, Alert, EmptyState, copyText, toast, toastError, errorText } from "@axs/kit";
+  import { ScrollText, KeyRound, ServerCog, History, FileSearch, FolderOpen, Pause, Play, Copy, Eraser, Search, Layers } from "@lucide/svelte";
+  import { call, pickFolder, pickFile, selectedAddons } from "../api";
+  import { app, refresh, loadProfile } from "../store.svelte";
 
-  let tab = $state("rpt");
+  let tab = $state<string>();
 
-  // RPT viewer
+  // --------------------------------------------------------------- RPT ----
   let rptPath = $state("");
   let rptText = $state("");
   let rptOffset = 0;
   let follow = $state(true);
-  let rptTimer: any;
-  let rptEl: HTMLElement | undefined = $state();
+  let level = $state<"all" | "err" | "warn">("all");
+  let q = $state("");
+  let rptTimer: ReturnType<typeof setInterval> | undefined;
+  let rptEl = $state<HTMLElement>();
+
   async function openRpt(path?: string | null) {
-    const p = path ?? (await call<string | null>("latest_rpt", { proton: false }));
-    if (!p) return toast("No RPT file found", "err");
+    const p = path ?? (await call<string | null>("latest_rpt", { proton: !!app.profile?.proton }).catch(() => null));
+    if (!p) return toast("No RPT log found. Start the game once first.", "warn");
     rptPath = p;
     rptText = "";
     rptOffset = 0;
@@ -24,108 +28,200 @@
     rptTimer = setInterval(() => follow && poll(), 1000);
   }
   async function poll() {
-    const c: any = await call("read_text_from", { path: rptPath, offset: rptOffset }).catch(() => null);
-    if (!c) return;
-    if (c.offset < rptOffset) rptText = "";
-    if (c.text) {
-      rptText = (rptText + c.text).slice(-2_000_000);
-      queueMicrotask(() => rptEl?.scrollTo(0, rptEl.scrollHeight));
+    try {
+      const c = await call<{ text: string; offset: number }>("read_text_from", { path: rptPath, offset: rptOffset });
+      if (c.offset < rptOffset) rptText = "";
+      if (c.text) {
+        rptText = (rptText + c.text).slice(-2_000_000);
+        if (follow) queueMicrotask(() => rptEl?.scrollTo(0, rptEl.scrollHeight));
+      }
+      rptOffset = c.offset;
+    } catch (e) {
+      clearInterval(rptTimer);
+      toastError(e, "Stopped following the log");
     }
-    rptOffset = c.offset;
   }
   onDestroy(() => clearInterval(rptTimer));
 
-  // Bikeys
+  const classify = (l: string) => (/\berror\b|exception|failed|cannot|missing/i.test(l) ? "err" : /\bwarning\b/i.test(l) ? "warn" : "");
+  const lines = $derived.by(() => {
+    const all = rptText.split("\n").map((t, i) => ({ i, t, c: classify(t) }));
+    const ql = q.toLowerCase();
+    return all.filter((l) => (level === "all" || l.c === level) && (!ql || l.t.toLowerCase().includes(ql))).slice(-4000);
+  });
+  const counts = $derived.by(() => {
+    let e = 0, w = 0;
+    for (const l of rptText.split("\n")) {
+      const c = classify(l);
+      if (c === "err") e++;
+      else if (c === "warn") w++;
+    }
+    return { e, w };
+  });
+
+  // -------------------------------------------------------------- keys ----
   let keySrc = $state("");
   let keyDst = $state("");
+  let keys = $state<string[] | null>(null);
+  let keyBusy = $state(false);
   async function extract() {
+    keyBusy = true;
     try {
-      const k: string[] = await call("extract_keys", { src: keySrc, dst: keyDst });
-      toast(`${k.length} key(s) copied`);
-    } catch (e: any) {
-      toast(String(e), "err");
+      keys = await call<string[]>("extract_keys", { src: keySrc, dst: keyDst });
+    } catch (e) {
+      toastError(e);
+    } finally {
+      keyBusy = false;
     }
   }
 
-  // Server helper
+  // ------------------------------------------------------- server helper ----
   let srvDir = $state("");
-  let srvMods = $state("");
-  let srvServerMods = $state("");
+  let srvMods = $state<string[]>([]);
+  let srvServerMods = $state<string[]>([]);
   let srvCopy = $state(false);
   let srvLower = $state(false);
-  let srvOut = $state("");
+  let srvBusy = $state(false);
+  let srvOut = $state<{ mods: string[]; server_mods: string[]; keys: string[]; parameters: string[] } | null>(null);
+  let srvErr = $state<string | null>(null);
   async function fillFromProfile() {
-    const p: Profile = await call("profile_get", { name: app.state!.active_profile });
-    srvMods = selectedAddons(p.groups).join(", ");
+    await loadProfile();
+    srvMods = selectedAddons(app.profile!.groups);
   }
   async function serverHelper() {
+    srvBusy = true;
+    srvErr = null;
     try {
-      const profile = await call<Profile>("profile_get", { name: app.state!.active_profile });
-      const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
-      const r: any = await call("server_helper", { params: { profile, server_dir: srvDir, target: null, mods: list(srvMods), server_mods: list(srvServerMods), copy: srvCopy, lowercase: srvLower } });
-      srvOut = `${r.mods.length + r.server_mods.length} mod(s) prepared, ${r.keys.length} key(s) copied.\n\nStart parameters:\n${r.parameters.join(" ")}`;
-    } catch (e: any) {
-      srvOut = String(e);
+      srvOut = await call("server_helper", { params: { profile: $state.snapshot(app.profile), server_dir: srvDir, target: null, mods: srvMods, server_mods: srvServerMods, copy: srvCopy, lowercase: srvLower } });
+    } catch (e) {
+      srvErr = errorText(e);
+    } finally {
+      srvBusy = false;
     }
   }
 
-  // Legacy import
+  // --------------------------------------------------------------- import ----
   let legacyDir = $state("");
-  let importOut = $state("");
+  let overwrite = $state(false);
+  let importBusy = $state(false);
+  let imp = $state<any>(null);
   async function importLegacy() {
+    importBusy = true;
     try {
-      const r: any = await call("import_legacy", { path: legacyDir, overwrite: false });
-      importOut = `Repositories: ${r.repositories.repositories.join(", ") || "none"}\nProfiles: ${r.profiles.join(", ") || "none"}\nFavorite servers: ${r.favorite_servers}\nExternal applications: ${r.external_apps}` +
-        (r.errors.length || r.repositories.skipped.length ? `\nSkipped: ${[...r.repositories.skipped, ...r.errors].map((x: any) => x.join(": ")).join("; ")}` : "");
+      imp = await call("import_legacy", { path: legacyDir, overwrite });
       await refresh();
-    } catch (e: any) {
-      importOut = String(e);
+      await loadProfile();
+    } catch (e) {
+      toastError(e);
+    } finally {
+      importBusy = false;
     }
   }
 </script>
 
-<h1>Tools</h1>
-<div class="tabs" style="margin-top:10px">
-  {#each [["rpt", "RPT viewer"], ["keys", "Bikey extractor"], ["server", "Server helper"], ["import", "Import ArmA3Sync"]] as [id, l]}
-    <button class:active={tab === id} onclick={() => (tab = id)}>{l}</button>
-  {/each}
+<div class="page">
+  <PageHeader title="Tools" subtitle="Logs, keys, dedicated servers and migration." />
+  <Tabs
+    bind:value={tab}
+    param="tab"
+    items={[
+      { id: "rpt", label: "RPT log", icon: ScrollText },
+      { id: "keys", label: "Bikeys", icon: KeyRound },
+      { id: "server", label: "Dedicated server", icon: ServerCog },
+      { id: "import", label: "Import ArmA3Sync", icon: History },
+    ]}
+  />
+
+  {#if tab === "rpt"}
+    <section class="card flush rpt">
+      <div class="tb">
+        <Button size="sm" variant="primary" icon={FileSearch} onclick={() => openRpt()}>Newest log</Button>
+        <Button size="sm" icon={FolderOpen} onclick={async () => openRpt(await pickFile("Select RPT", ["rpt", "log", "txt"]))}>Open…</Button>
+        {#if rptPath}
+          <Button size="sm" variant="ghost" icon={follow ? Pause : Play} onclick={() => (follow = !follow)}>{follow ? "Pause" : "Follow"}</Button>
+          <div class="spacer"></div>
+          <SegmentedControl size="sm" bind:value={level} options={[{ value: "all", label: "All" }, { value: "err", label: `Errors ${counts.e}` }, { value: "warn", label: `Warnings ${counts.w}` }]} />
+          <div class="search"><Search size={13} /><input type="search" placeholder="Search…" bind:value={q} /></div>
+          <Button size="sm" variant="ghost" icon={Copy} tip="Copy shown lines" onclick={async () => (await copyText(lines.map((l) => l.t).join("\n"))) && toast("Copied")} />
+          <Button size="sm" variant="ghost" icon={Eraser} tip="Clear view" onclick={() => (rptText = "")} />
+        {/if}
+      </div>
+      {#if rptPath}
+        <div class="path xs subtle mono ellipsis" title={rptPath}>{rptPath}{follow ? " · following" : " · paused"}</div>
+        <div class="log rptlog" bind:this={rptEl}>
+          {#each lines as l (l.i)}<div class="ln {l.c ? 'l-' + l.c : ''}">{l.t || " "}</div>{:else}<span class="subtle">No matching lines.</span>{/each}
+        </div>
+      {:else}
+        <EmptyState icon={ScrollText} title="Game log viewer" description="Open the newest Arma 3 RPT log to watch it live, with errors and warnings highlighted." compact>
+          <Button variant="primary" icon={FileSearch} onclick={() => openRpt()}>Open newest log</Button>
+        </EmptyState>
+      {/if}
+    </section>
+  {:else if tab === "keys"}
+    <Section title="Extract bikeys" icon={KeyRound} description="Copies every .bikey found below the source folder into the target folder, e.g. a dedicated server's keys folder.">
+      <div class="form-grid">
+        <Field label="Source (mods folder)">{#snippet children(id)}<PathInput {id} bind:value={keySrc} browse={() => pickFolder("Mods folder")} />{/snippet}</Field>
+        <Field label="Target (keys folder)">{#snippet children(id)}<PathInput {id} bind:value={keyDst} browse={() => pickFolder("Keys folder")} />{/snippet}</Field>
+      </div>
+      {#if keys}
+        <Alert tone={keys.length ? "ok" : "warn"} title={keys.length ? `${keys.length} key${keys.length > 1 ? "s" : ""} copied` : "No keys found"}>
+          {#if keys.length}<div class="chips" style="margin-top:6px">{#each keys as k}<span class="chip mono">{k}</span>{/each}</div>{/if}
+        </Alert>
+      {/if}
+      {#snippet footer()}<Button variant="primary" icon={KeyRound} loading={keyBusy} disabled={!keySrc || !keyDst} onclick={extract}>Extract keys</Button>{/snippet}
+    </Section>
+  {:else if tab === "server"}
+    <Section title="Prepare a dedicated server" icon={ServerCog} description="Links (or copies) mods into <server>/mods, copies their keys into <server>/keys and builds the -mod / -serverMod parameters.">
+      <Field label="Server folder" required>{#snippet children(id)}<PathInput {id} bind:value={srvDir} browse={() => pickFolder("Server folder")} />{/snippet}</Field>
+      <Field label="Mods (-mod)" required>
+        {#snippet aside()}<button class="btn ghost sm" onclick={fillFromProfile}><Layers size={13} />From profile</button>{/snippet}
+        {#snippet children(id)}<TagListInput {id} bind:values={srvMods} placeholder="@CBA_A3" />{/snippet}
+      </Field>
+      <Field label="Server-only mods (-serverMod)">{#snippet children(id)}<TagListInput {id} bind:values={srvServerMods} placeholder="@server_admin_tools" />{/snippet}</Field>
+      <div class="row loose">
+        <Switch bind:checked={srvCopy} label="Copy instead of linking" hint="Use when the server runs on another drive." />
+        <Switch bind:checked={srvLower} label="Lowercase names" hint="For Linux servers." />
+      </div>
+      {#if srvErr}<Alert tone="err">{srvErr}</Alert>{/if}
+      {#if srvOut}
+        <Alert tone="ok" title="Server prepared">{srvOut.mods.length + srvOut.server_mods.length} mod(s) linked, {srvOut.keys.length} key(s) copied.</Alert>
+        <CopyField label="Start parameters" value={srvOut.parameters.join(" ")} />
+      {/if}
+      {#snippet footer()}<Button variant="primary" icon={ServerCog} loading={srvBusy} disabled={!srvDir || !srvMods.length} onclick={serverHelper}>Prepare server</Button>{/snippet}
+    </Section>
+  {:else if tab === "import"}
+    <Section title="Import from ArmA3Sync" icon={History} description="Repositories (with saved logins), launcher profiles, favorite servers and external applications.">
+      <Field label="ArmA3Sync installation folder">{#snippet children(id)}<PathInput {id} bind:value={legacyDir} placeholder="C:\ArmA3Sync" browse={() => pickFolder("ArmA3Sync folder")} />{/snippet}</Field>
+      <Switch bind:checked={overwrite} label="Overwrite existing entries" hint="Replace repositories and profiles that have the same name." />
+      {#if imp}
+        <div class="kv">
+          <span>Repositories</span><span>{imp.repositories.repositories.join(", ") || "none"}</span>
+          <span>Profiles</span><span>{imp.profiles.join(", ") || "none"}</span>
+          <span>Favorite servers</span><span>{imp.favorite_servers}</span>
+          <span>External apps</span><span>{imp.external_apps}</span>
+        </div>
+        {#if imp.repositories.skipped.length || imp.errors.length}
+          <Alert tone="warn" title="Skipped">
+            <ul class="skip">{#each [...imp.repositories.skipped, ...imp.errors] as [n, why]}<li><b>{n}</b>: {why}</li>{/each}</ul>
+          </Alert>
+        {/if}
+      {/if}
+      {#snippet footer()}<Button variant="primary" icon={History} loading={importBusy} disabled={!legacyDir} onclick={importLegacy}>Import</Button>{/snippet}
+    </Section>
+  {/if}
 </div>
 
-{#if tab === "rpt"}
-  <div class="card stack">
-    <div class="row">
-      <button class="btn primary" onclick={() => openRpt()}>Open newest RPT</button>
-      <button class="btn" onclick={async () => openRpt(await pickFile("Select RPT", ["rpt", "log", "txt"]))}>Open file…</button>
-      <label class="check"><input type="checkbox" bind:checked={follow} /> Follow</label>
-      <span class="small muted">{rptPath}</span>
-    </div>
-    <div class="log" style="max-height:60vh;min-height:300px" bind:this={rptEl}>{rptText || "No file opened."}</div>
-  </div>
-{:else if tab === "keys"}
-  <div class="card stack">
-    <div class="small muted">Copies every *.bikey found below the source folder into the target folder (e.g. a dedicated server's keys folder).</div>
-    <label class="field">Source <div class="row"><input bind:value={keySrc} style="flex:1" /><button class="btn" onclick={async () => (keySrc = (await pickFolder()) ?? keySrc)}>Browse…</button></div></label>
-    <label class="field">Target <div class="row"><input bind:value={keyDst} style="flex:1" /><button class="btn" onclick={async () => (keyDst = (await pickFolder()) ?? keyDst)}>Browse…</button></div></label>
-    <div class="row end"><button class="btn primary" disabled={!keySrc || !keyDst} onclick={extract}>Extract keys</button></div>
-  </div>
-{:else if tab === "server"}
-  <div class="card stack">
-    <div class="small muted">Prepares a dedicated server folder: links (or copies) the mods into &lt;server&gt;/mods, copies their keys into &lt;server&gt;/keys and prints the -mod / -serverMod parameters.</div>
-    <label class="field">Server folder <div class="row"><input bind:value={srvDir} style="flex:1" /><button class="btn" onclick={async () => (srvDir = (await pickFolder()) ?? srvDir)}>Browse…</button></div></label>
-    <label class="field">Mods (-mod), comma separated <div class="row"><input bind:value={srvMods} style="flex:1" /><button class="btn" onclick={fillFromProfile}>From profile</button></div></label>
-    <label class="field">Server-only mods (-serverMod) <input bind:value={srvServerMods} /></label>
-    <div class="row">
-      <label class="check"><input type="checkbox" bind:checked={srvCopy} /> Copy instead of linking</label>
-      <label class="check"><input type="checkbox" bind:checked={srvLower} /> Lowercase names (Linux servers)</label>
-    </div>
-    <div class="row end"><button class="btn primary" disabled={!srvDir || !srvMods} onclick={serverHelper}>Prepare server</button></div>
-    {#if srvOut}<div class="log">{srvOut}</div>{/if}
-  </div>
-{:else if tab === "import"}
-  <div class="card stack">
-    <div class="small muted">Imports repositories (including saved logins), launcher profiles, favorite servers and external applications from an ArmA3Sync installation folder.</div>
-    <label class="field">ArmA3Sync folder <div class="row"><input bind:value={legacyDir} style="flex:1" /><button class="btn" onclick={async () => (legacyDir = (await pickFolder()) ?? legacyDir)}>Browse…</button></div></label>
-    <div class="row end"><button class="btn primary" disabled={!legacyDir} onclick={importLegacy}>Import</button></div>
-    {#if importOut}<div class="log">{importOut}</div>{/if}
-  </div>
-{/if}
+<style>
+  .rpt { display: flex; flex-direction: column; }
+  .tb { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .search { position: relative; width: 180px; }
+  .search :global(svg) { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: var(--fg-3); }
+  .search input { height: 26px; padding-left: 26px; font-size: 12.5px; }
+  .path { padding: 6px 12px; border-bottom: 1px solid var(--line); }
+  .rptlog { border: 0; border-radius: 0; max-height: none; height: calc(100vh - 310px); min-height: 280px; white-space: pre; overflow: auto; }
+  .ln { min-height: 1.55em; }
+  .ln.l-err { color: var(--err); background: var(--err-soft); }
+  .ln.l-warn { color: var(--warn); }
+  .chip.mono { font-family: var(--mono); font-size: 12px; }
+  .skip { margin: 4px 0 0; padding-left: 18px; }
+</style>

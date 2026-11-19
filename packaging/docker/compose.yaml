@@ -1,8 +1,12 @@
 # docker compose -f packaging/docker/compose.yaml up -d
 # First start prints a setup token in `docker compose logs`; open http://<host>:8080/admin/
+#
+# Updates: the admin UI tells you when a new release is out. To update:
+#   docker compose pull && docker compose up -d
+# Or let Watchtower do it automatically (uncomment the service below).
 services:
   armaxsync:
-    image: ghcr.io/armaxsync/server:latest
+    image: ghcr.io/ilbinek/armaxsync-server:latest   # or pin a version, e.g. :0.2
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -13,5 +17,16 @@ services:
       - armaxsync-data:/data
       # External repositories: mount existing mod folders read-write
       # - /srv/arma/mods:/srv/mods
+    # labels:
+    #   com.centurylinklabs.watchtower.enable: "true"
+
+  # watchtower:
+  #   image: containrrr/watchtower
+  #   restart: unless-stopped
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   # Check daily at 04:00, only containers labelled above, remove old images.
+  #   command: --schedule "0 0 4 * * *" --label-enable --cleanup
+
 volumes:
   armaxsync-data:

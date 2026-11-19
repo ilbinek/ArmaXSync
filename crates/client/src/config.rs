@@ -27,6 +27,45 @@ pub struct AppConfig {
     pub external_apps: Vec<axs_launcher::ExternalApp>,
     /// What the GUI does once the game started.
     pub at_launch: AtLaunch,
+    /// Desktop app self-update preferences.
+    pub updates: UpdatePrefs,
+    /// Desktop UI preferences.
+    pub ui: UiPrefs,
+}
+
+/// Desktop app self-update preferences.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct UpdatePrefs {
+    /// Look for a new ArmaXSync release on startup and every few hours.
+    pub check: bool,
+    /// Install found updates without asking (never while syncing or playing).
+    pub auto_install: bool,
+    /// A version the user chose to skip.
+    pub skipped: Option<String>,
+}
+
+impl Default for UpdatePrefs {
+    fn default() -> Self {
+        Self {
+            check: true,
+            auto_install: false,
+            skipped: None,
+        }
+    }
+}
+
+/// Desktop UI preferences.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct UiPrefs {
+    /// `system`, `dark` or `light` (empty = dark, the default look).
+    pub theme: String,
+    /// Show repository hosting tools (build / push) on repository pages.
+    pub admin_tools: bool,
+    pub sidebar_collapsed: bool,
+    /// The first-run setup was completed or dismissed.
+    pub onboarded: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]

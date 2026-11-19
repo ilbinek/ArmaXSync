@@ -19,7 +19,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/armaxsync/armaxsync"
+repository = "https://github.com/ilbinek/ArmaXSync"
 rust-version = "1.80"
 
 [workspace.dependencies]
@@ -55,6 +55,8 @@ tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
 futures = "0.3"
 bytes = "1"
+minisign-verify = "0.2"
+semver = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "socks", "http2", "charset"] }
 suppaftp = { version = "6", default-features = false }
 percent-encoding = "2"

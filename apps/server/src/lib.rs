@@ -16,6 +16,7 @@ pub mod repos_api;
 pub mod scheduler;
 pub mod state;
 pub mod stats;
+pub mod updates;
 pub mod web;
 
 use std::net::SocketAddr;
@@ -52,6 +53,7 @@ pub async fn build_state(cfg: config::Config) -> anyhow::Result<Shared> {
         global_limiter: Arc::new(axs_transport::RateLimiter::new(cfg.bandwidth_limit)),
         global_downloads: Arc::new(tokio::sync::Semaphore::new(max)),
         jobs: jobs::JobManager::new(cfg.job_workers),
+        updates: updates::Updates::new(&cfg.updates),
         cfg,
         db,
         secrets,
@@ -75,6 +77,7 @@ pub async fn serve(st: Shared) -> anyhow::Result<()> {
     }
     publish::recover_journals(&st).await?;
     scheduler::spawn(st.clone());
+    updates::spawn(st.clone());
     let app = api::router(st.clone()).layer(
         tower_http::trace::TraceLayer::new_for_http()
             .make_span_with(tower_http::trace::DefaultMakeSpan::new().level(tracing::Level::DEBUG))
@@ -92,10 +95,33 @@ pub async fn serve(st: Shared) -> anyhow::Result<()> {
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(async {
-        let _ = tokio::signal::ctrl_c().await;
+        shutdown_signal().await;
         tracing::info!("shutting down");
     })
     .await?;
     let _ = stats::flush(&st).await;
     Ok(())
+}
+
+/// Ctrl-C, or SIGTERM (systemd stop/restart, `docker stop`).
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        match signal(SignalKind::terminate()) {
+            Ok(mut term) => {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = term.recv() => {}
+                }
+            }
+            Err(_) => {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }

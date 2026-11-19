@@ -1,82 +1,149 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Modal, toast } from "@axs/kit";
-  import { get, post, put, del } from "../../api";
+  import { Section, Button, Modal, Field, PasswordInput, Switch, Alert, CopyField, EmptyState, Badge, Skeleton, confirmDialog, toast, toastError, errorText } from "@axs/kit";
+  import { KeyRound, Plus, Trash2, UsersRound, Lock } from "@lucide/svelte";
+  import { get, post, put, del, type RepoDetail } from "../../api";
+  import { isAdmin, openJob } from "../../session.svelte";
 
-  let { slug, isAdmin, onjob }: { slug: string; isAdmin: boolean; onjob: (id: number) => void } = $props();
-  let creds = $state<any[]>([]);
+  let { repo }: { repo: RepoDetail } = $props();
+  // svelte-ignore state_referenced_locally
+  const slug = repo.slug;
+
+  type Cred = { id: number; login: string; note: string; embed: boolean };
+  let creds = $state<Cred[] | null>(null);
   let maintainers = $state<string[]>([]);
-  let users = $state<any[]>([]);
+  let users = $state<{ username: string; role: string; disabled: boolean }[]>([]);
   let open = $state(false);
   let form = $state({ login: "", password: "", embed: false, note: "" });
-  let created: { login: string; password: string } | null = $state(null);
+  let busy = $state(false);
+  let formErr = $state<string | null>(null);
+  let created = $state<{ login: string; password: string } | null>(null);
+  let savingM = $state<string | null>(null);
 
   async function load() {
-    creds = await get(`/repos/${slug}/credentials`);
-    maintainers = await get(`/repos/${slug}/maintainers`);
-    if (isAdmin) users = await get("/users");
+    try {
+      const [c, m] = await Promise.all([get<Cred[]>(`/repos/${slug}/credentials`), get<string[]>(`/repos/${slug}/maintainers`)]);
+      creds = c;
+      maintainers = m;
+      if (isAdmin()) users = await get("/users");
+    } catch (e) {
+      toastError(e);
+      creds = [];
+    }
   }
   onMount(load);
 
+  const loginErr = $derived(!form.login.trim() ? null : /[:\s]/.test(form.login) ? "No spaces or colons" : form.login.trim().toLowerCase() === "anonymous" ? "Reserved name" : creds?.some((c) => c.login === form.login.trim()) ? "Already exists" : null);
+
   async function add() {
+    if (!form.login.trim() || loginErr) return;
+    busy = true;
+    formErr = null;
     try {
-      const r = await post(`/repos/${slug}/credentials`, { ...form, password: form.password || undefined });
+      const r = await post<{ login: string; password: string; job?: number }>(`/repos/${slug}/credentials`, { ...form, login: form.login.trim(), password: form.password || undefined });
       created = { login: r.login, password: r.password };
       open = false;
-      form = { login: "", password: "", embed: false, note: "" };
-      if (r.job) onjob(r.job);
+      if (r.job) openJob(r.job);
       load();
-    } catch (e: any) {
-      toast(e.message, "err");
+    } catch (e) {
+      formErr = errorText(e);
+    } finally {
+      busy = false;
     }
   }
-  async function remove(id: number) {
-    if (!confirm("Revoke this login? Players using it lose access.")) return;
-    await del(`/repos/${slug}/credentials/${id}`);
-    load();
+
+  async function remove(c: Cred) {
+    if (!(await confirmDialog({ title: `Revoke ${c.login}?`, message: "Players using this login can no longer download the repository.", confirmLabel: "Revoke", danger: true }))) return;
+    try {
+      await del(`/repos/${slug}/credentials/${c.id}`);
+      load();
+    } catch (e) {
+      toastError(e);
+    }
   }
-  async function toggleMaintainer(u: string) {
-    const next = maintainers.includes(u) ? maintainers.filter((m) => m !== u) : [...maintainers, u];
-    await put(`/repos/${slug}/maintainers`, next);
-    maintainers = next;
+
+  async function toggleMaintainer(u: string, on: boolean) {
+    const next = on ? [...maintainers, u] : maintainers.filter((m) => m !== u);
+    savingM = u;
+    try {
+      await put(`/repos/${slug}/maintainers`, next);
+      maintainers = next;
+      toast(on ? `${u} can now manage ${repo.name}` : `${u} no longer manages ${repo.name}`);
+    } catch (e) {
+      toastError(e);
+    } finally {
+      savingM = null;
+    }
   }
 </script>
 
-<div class="stack">
-  <div class="card stack">
-    <div class="row"><h2 style="margin:0">Download logins</h2><div class="spacer"></div><button class="btn small primary" onclick={() => (open = true)}>Add login</button></div>
-    <div class="small muted">Used by players (HTTP Basic auth, compatible with ArmA3Sync) when the repository is private.
-      A login marked <b>embedded</b> is published inside the auto-config so players don't have to type it — anyone with the auto-config URL can read it.</div>
-    {#if created}
-      <div class="alert ok">New login <b>{created.login}</b> / password <code>{created.password}</code> — copy it now, it is not shown again.</div>
-    {/if}
-    <table>
-      <thead><tr><th>Login</th><th>Note</th><th>Embedded</th><th></th></tr></thead>
-      <tbody>
-        {#each creds as c}
-          <tr><td>{c.login}</td><td class="muted">{c.note}</td><td>{c.embed ? "yes" : ""}</td><td style="text-align:right"><button class="btn ghost small danger" onclick={() => remove(c.id)}>Revoke</button></td></tr>
-        {:else}<tr><td colspan="4" class="empty">No logins.</td></tr>{/each}
-      </tbody>
-    </table>
-  </div>
-
-  {#if isAdmin}
-    <div class="card stack">
-      <h2>Maintainers</h2>
-      <div class="small muted">Maintainers can upload, publish, edit events and settings of this repository.</div>
-      <div class="row">
-        {#each users.filter((u) => u.role === "user") as u}
-          <label class="check"><input type="checkbox" checked={maintainers.includes(u.username)} onchange={() => toggleMaintainer(u.username)} /> {u.username}</label>
-        {:else}<span class="muted small">Create users with the "user" role first (Users page).</span>{/each}
+<div class="stack loose narrowish">
+  {#if created}
+    <Alert tone="ok" title={`Login ${created.login} created`} dismissible ondismiss={() => (created = null)}>
+      Copy the password now: it is not shown again.
+      <div class="stack tight" style="margin-top:8px">
+        <CopyField label="Login" value={created.login} />
+        <CopyField label="Password" value={created.password} secret />
       </div>
-    </div>
+    </Alert>
+  {/if}
+
+  <Section title="Download logins" icon={KeyRound} description="Players of a private repository sign in with one of these (HTTP Basic auth, works with ArmA3Sync too)." flush>
+    {#snippet actions()}<Button size="sm" variant="primary" icon={Plus} onclick={() => ((open = true), (form = { login: "", password: "", embed: false, note: "" }), (formErr = null))}>Add login</Button>{/snippet}
+    {#if repo.visibility === "public"}
+      <div class="pad"><Alert tone="info" icon={Lock}>The repository is public, so logins are not required. Make it private under Settings to require one.</Alert></div>
+    {/if}
+    {#if !creds}
+      <div class="pad"><Skeleton lines={3} /></div>
+    {:else if !creds.length}
+      <EmptyState icon={KeyRound} title="No logins" compact />
+    {:else}
+      <table>
+        <thead><tr><th>Login</th><th>Note</th><th></th><th></th></tr></thead>
+        <tbody>
+          {#each creds as c (c.id)}
+            <tr>
+              <td class="mono">{c.login}</td>
+              <td class="muted small">{c.note}</td>
+              <td>{#if c.embed}<Badge tone="warn" plain>In auto-config</Badge>{/if}</td>
+              <td class="actions"><Button size="sm" variant="ghost" icon={Trash2} onclick={() => remove(c)}>Revoke</Button></td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+  </Section>
+
+  {#if isAdmin()}
+    <Section title="Maintainers" icon={UsersRound} description="Users who can upload, publish and change this repository's settings. Admins can always.">
+      {#if users.filter((u) => u.role === "user").length}
+        <div class="stack tight">
+          {#each users.filter((u) => u.role === "user") as u (u.username)}
+            <Switch checked={maintainers.includes(u.username)} disabled={savingM === u.username || u.disabled} label={u.username} hint={u.disabled ? "Disabled account" : undefined} onchange={(v) => toggleMaintainer(u.username, v)} />
+          {/each}
+        </div>
+      {:else}
+        <p class="small muted">No regular users yet. <a href="#/users">Create one</a> with the “user” role first.</p>
+      {/if}
+    </Section>
   {/if}
 </div>
 
-<Modal bind:open title="Add download login">
-  <label class="field">Login <input bind:value={form.login} /></label>
-  <label class="field">Password <span class="hint">Leave empty to generate one.</span><input bind:value={form.password} /></label>
-  <label class="field">Note <input bind:value={form.note} placeholder="e.g. clan members" /></label>
-  <label class="check"><input type="checkbox" bind:checked={form.embed} /> Embed in the public auto-config (legacy behaviour)</label>
-  {#snippet footer()}<button class="btn primary" onclick={add}>Add</button>{/snippet}
+<Modal bind:open title="Add download login" persistent={busy}>
+  <form class="stack" onsubmit={(e) => (e.preventDefault(), add())}>
+    <Field label="Login" required error={loginErr}>{#snippet children(id)}<input {id} bind:value={form.login} autocomplete="off" data-autofocus />{/snippet}</Field>
+    <Field label="Password" hint="Leave empty to generate a strong one.">{#snippet children(id)}<PasswordInput {id} bind:value={form.password} autocomplete="new-password" />{/snippet}</Field>
+    <Field label="Note">{#snippet children(id)}<input {id} bind:value={form.note} placeholder="e.g. clan members" />{/snippet}</Field>
+    <Switch bind:checked={form.embed} label="Embed in the auto-config" hint="Legacy behaviour: players don't type it, but anyone with the auto-config URL can read it. Only one login can be embedded; this replaces the current one." />
+    {#if formErr}<Alert tone="err">{formErr}</Alert>{/if}
+  </form>
+  {#snippet footer()}
+    <Button onclick={() => (open = false)} disabled={busy}>Cancel</Button>
+    <Button variant="primary" loading={busy} disabled={!form.login.trim() || !!loginErr} onclick={add}>Add login</Button>
+  {/snippet}
 </Modal>
+
+<style>
+  .narrowish { max-width: 900px; }
+  .pad { padding: 12px 16px; }
+</style>

@@ -1,10 +1,9 @@
 <script lang="ts">
+  import { PageHeader } from "@axs/kit";
   import JobList from "../components/JobList.svelte";
-  import JobDialog from "../components/JobDialog.svelte";
-  let jobId = $state<number | null>(null);
 </script>
 
-<h1>Jobs</h1>
-<div class="muted" style="margin-bottom:14px">Builds, publishes, mirror pulls and housekeeping.</div>
-<JobList onopen={(id: number) => (jobId = id)} />
-{#if jobId}<JobDialog id={jobId} onclose={() => (jobId = null)} />{/if}
+<div class="page">
+  <PageHeader title="Jobs" subtitle="Builds, publishes, mirror pulls and maintenance. Click a job for its log." />
+  <div class="card flush"><JobList /></div>
+</div>

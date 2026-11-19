@@ -52,6 +52,9 @@ async-stream.workspace = true
 rust-embed.workspace = true
 mime_guess.workspace = true
 chrono.workspace = true
+reqwest.workspace = true
+minisign-verify.workspace = true
+semver.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
@@ -66,6 +69,9 @@ extended-description = "Hosts Arma 3 / Arma Reforger mod repositories for ArmaXS
 assets = [
   ["target/release/armaxsync-server", "usr/bin/", "755"],
   ["../../packaging/systemd/armaxsync-server.service", "lib/systemd/system/", "644"],
+  ["../../packaging/systemd/armaxsync-server-update.service", "lib/systemd/system/", "644"],
+  ["../../packaging/systemd/armaxsync-server-update.path", "lib/systemd/system/", "644"],
+  ["../../packaging/update-helper.sh", "usr/lib/armaxsync/update-helper", "755"],
 ]
 maintainer-scripts = "../../packaging/deb/"
 
@@ -73,5 +79,8 @@ maintainer-scripts = "../../packaging/deb/"
 assets = [
   { source = "target/release/armaxsync-server", dest = "/usr/bin/armaxsync-server", mode = "755" },
   { source = "../../packaging/systemd/armaxsync-server.service", dest = "/usr/lib/systemd/system/armaxsync-server.service", mode = "644" },
+  { source = "../../packaging/systemd/armaxsync-server-update.service", dest = "/usr/lib/systemd/system/armaxsync-server-update.service", mode = "644" },
+  { source = "../../packaging/systemd/armaxsync-server-update.path", dest = "/usr/lib/systemd/system/armaxsync-server-update.path", mode = "644" },
+  { source = "../../packaging/update-helper.sh", dest = "/usr/lib/armaxsync/update-helper", mode = "755" },
 ]
 post_install_script = "../../packaging/postinst.sh"

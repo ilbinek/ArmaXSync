@@ -1,4 +1,15 @@
 name: Release
+# Push a tag matching the workspace version (tools/release/bump.sh) to release:
+#   git tag v0.2.0 && git push origin v0.2.0
+# Tags with a pre-release suffix (v0.2.0-rc.1) become GitHub pre-releases, which
+# the update checkers ignore (they read releases/latest/download/*).
+#
+# The release is created as a draft, every job uploads into it, and the final
+# `publish` job makes it visible, so clients never see a half-uploaded release.
+#
+# Secrets: TAURI_SIGNING_PRIVATE_KEY (+ TAURI_SIGNING_PRIVATE_KEY_PASSWORD) sign
+# the desktop updater bundles and the server binaries (minisign). The public key
+# is in apps/desktop/tauri.conf.json and apps/server/src/updates.rs.
 on:
   push:
     tags: ["v*"]
@@ -7,21 +18,54 @@ permissions:
   contents: write
   packages: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  TAURI_CLI: "@tauri-apps/cli@2.12.5"
+
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+      release_id: ${{ steps.rel.outputs.id }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: v
+        run: |
+          version="$(bash tools/release/check-version.sh "$GITHUB_REF_NAME")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then echo "prerelease=true"; else echo "prerelease=false"; fi >> "$GITHUB_OUTPUT"
+      - id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash tools/release/notes.sh "${{ steps.v.outputs.version }}" > notes.md
+          flags=(--draft --verify-tag --title "ArmaXSync $GITHUB_REF_NAME" --notes-file notes.md)
+          [[ "${{ steps.v.outputs.prerelease }}" == true ]] && flags+=(--prerelease)
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" "${flags[@]}"
+          id="$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq ".[] | select(.tag_name == \"$GITHUB_REF_NAME\") | .id" | head -1)"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
   ui:
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
-        with: { version: 9 }
+        with: { version: 11 }
       - uses: actions/setup-node@v5
         with: { node-version: 22 }
-      - run: pnpm -C ui install && pnpm -C ui build
+      - run: pnpm -C ui install --frozen-lockfile && pnpm -C ui build
       - uses: actions/upload-artifact@v4
         with: { name: ui, path: "ui/apps/*/build" }
 
   server:
-    needs: ui
+    needs: [prepare, ui]
     strategy:
       matrix:
         include:
@@ -29,6 +73,8 @@ jobs:
           - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
           - { target: x86_64-pc-windows-msvc, os: windows-latest }
     runs-on: ${{ matrix.os }}
+    defaults:
+      run: { shell: bash }
     steps:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
@@ -37,24 +83,27 @@ jobs:
         with: { targets: "${{ matrix.target }}" }
       - if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - run: cargo build --release -p armaxsync-server -p armaxsync --target ${{ matrix.target }}
-      - if: contains(matrix.target, 'linux')
+      - run: cargo build --release --locked -p armaxsync-server -p armaxsync --target ${{ matrix.target }}
+      - name: Collect binaries
         run: |
-          cargo install cargo-deb cargo-generate-rpm
+          mkdir -p dist
+          ext=""; [[ "${{ matrix.target }}" == *windows* ]] && ext=".exe"
+          cp "target/${{ matrix.target }}/release/armaxsync-server$ext" "dist/armaxsync-server-${{ matrix.target }}$ext"
+          cp "target/${{ matrix.target }}/release/armaxsync$ext" "dist/armaxsync-${{ matrix.target }}$ext"
+      - if: contains(matrix.target, 'linux')
+        name: deb / rpm
+        run: |
+          cargo install --locked cargo-deb cargo-generate-rpm
           cargo deb -p armaxsync-server --no-build --target ${{ matrix.target }}
           cargo generate-rpm -p apps/server --target ${{ matrix.target }}
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            target/${{ matrix.target }}/release/armaxsync-server*
-            target/${{ matrix.target }}/release/armaxsync
-            target/${{ matrix.target }}/release/armaxsync.exe
-            target/${{ matrix.target }}/debian/*.deb
-            target/${{ matrix.target }}/generate-rpm/*.rpm
+          cp target/${{ matrix.target }}/debian/*.deb target/${{ matrix.target }}/generate-rpm/*.rpm dist/
+      - uses: actions/upload-artifact@v4
+        with: { name: "server-${{ matrix.target }}", path: dist/* }
 
   desktop:
-    needs: ui
+    needs: prepare
     strategy:
+      fail-fast: false
       matrix:
         include:
           - { os: windows-latest, args: "" }
@@ -66,22 +115,26 @@ jobs:
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
       - uses: pnpm/action-setup@v4
-        with: { version: 9 }
+        with: { version: 11 }
       - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - uses: dtolnay/rust-toolchain@stable
-      - run: pnpm -C ui install
+      - run: pnpm -C ui install --frozen-lockfile
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
-          tagName: ${{ github.ref_name }}
-          releaseName: ArmaXSync ${{ github.ref_name }}
+          tauriScript: npx --prefix ../../ui/apps/desktop tauri
+          releaseId: ${{ needs.prepare.outputs.release_id }}
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
 
   docker:
-    needs: ui
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -92,12 +145,55 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/armaxsync-server
+          # latest=auto: only stable versions move :latest
+          flavor: latest=auto
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
       - uses: docker/build-push-action@v6
         with:
           context: .
           file: packaging/docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/armaxsync-server:${{ github.ref_name }}
-            ghcr.io/${{ github.repository_owner }}/armaxsync-server:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  publish:
+    needs: [prepare, server, desktop, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: 22 }
+      - uses: actions/download-artifact@v4
+        with: { pattern: "server-*", path: dist, merge-multiple: true }
+      - name: Sign server binaries
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for f in dist/armaxsync-server-*; do
+            case "$f" in *.deb|*.rpm) continue ;; esac
+            npx -y "$TAURI_CLI" signer sign "$f"
+          done
+      - name: Manifest and checksums
+        run: |
+          v="${{ needs.prepare.outputs.version }}"
+          bash tools/release/notes.sh "$v" > notes.md
+          bash tools/release/server-manifest.sh dist "$v" notes.md \
+            "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME" > dist/server-latest.json
+          (cd dist && sha256sum $(ls | grep -v '\.sig$' | grep -v '^SHA256SUMS$') > SHA256SUMS)
+          cat dist/server-latest.json
+      - name: Upload and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          flags=(--draft=false)
+          [[ "${{ needs.prepare.outputs.prerelease }}" == false ]] && flags+=(--latest)
+          gh release edit "$GITHUB_REF_NAME" "${flags[@]}"

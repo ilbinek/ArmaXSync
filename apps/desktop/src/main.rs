@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod updater;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -40,6 +41,8 @@ fn main() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::UpdaterState::default())
         .manage(AppState {
             dirs,
             syncs: Mutex::new(HashMap::new()),
@@ -96,6 +99,8 @@ fn main() {
             commands::import_legacy,
             commands::build_repo,
             commands::push_repo,
+            updater::update_check,
+            updater::update_install,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ArmaXSync");

@@ -34,6 +34,8 @@ pub struct Config {
     pub aliases: Vec<Alias>,
     /// Serve the admin UI from this folder instead of the embedded copy (dev).
     pub ui_dir: Option<PathBuf>,
+    /// Release checks and self-update.
+    pub updates: crate::updates::UpdateConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +60,7 @@ impl Default for Config {
             session_hours: 24 * 14,
             aliases: vec![],
             ui_dir: None,
+            updates: Default::default(),
         }
     }
 }
@@ -132,6 +135,16 @@ max_downloads = 0
 job_workers = 2
 metrics = true
 # metrics_token = "secret"
+
+# New releases are announced in the admin UI. Under systemd (deb/rpm) the
+# owner can install them with one click; Docker and manual installs only get
+# the notice.
+[updates]
+check = true
+interval_hours = 6
+# Install new releases automatically, at most once per window (server time).
+auto_install = false
+auto_install_cron = "0 4 * * *"
 
 # Keep old repository URLs working after migrating to ArmaXSync:
 # [[aliases]]

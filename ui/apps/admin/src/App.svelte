@@ -1,8 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Toasts, router, matchRoute, navigate } from "@axs/kit";
-  import { me as fetchMe, logout, type Me } from "./api";
+  import { Toasts, Logo, Menu, Button, Spinner, router, matchRoute, navigate, toast, setTheme, theme } from "@axs/kit";
+  import { LayoutDashboard, Database, ListChecks, ChartColumn, Users as UsersIcon, ScrollText, KeyRound, Menu as MenuIcon, X, LogOut, ExternalLink, UserRound, Moon, Sun, Monitor, LoaderCircle } from "@lucide/svelte";
+  import { me as fetchMe, logout, onUnauthorized, onServerVersionChange, jobLabel } from "./api";
+  import { session, isAdmin, loadSystem, pollActive, openJob } from "./session.svelte";
   import Login from "./pages/Login.svelte";
+  import Dashboard from "./pages/Dashboard.svelte";
   import Repos from "./pages/Repos.svelte";
   import Repo from "./pages/Repo.svelte";
   import Jobs from "./pages/Jobs.svelte";
@@ -10,89 +13,209 @@
   import Tokens from "./pages/Tokens.svelte";
   import Audit from "./pages/Audit.svelte";
   import Stats from "./pages/Stats.svelte";
+  import JobDrawer from "./components/JobDrawer.svelte";
+  import UpdateBanner from "./components/UpdateBanner.svelte";
 
-  let me = $state<Me | null>(null);
   let loading = $state(true);
+  let navOpen = $state(false);
+  let expired = $state(false);
 
-  onMount(async () => {
-    me = await fetchMe().catch(() => null);
-    loading = false;
+  onMount(() => {
+    (async () => {
+      session.me = await fetchMe().catch(() => null);
+      loading = false;
+      if (session.me) await loadSystem();
+    })();
+    onUnauthorized(() => {
+      if (!session.me) return;
+      session.me = null;
+      expired = true;
+    });
+    onServerVersionChange((v) => {
+      if (session.restarting) return;
+      toast(`The server was updated to ${v}`, "info", { ms: 0, action: { label: "Reload", run: () => location.reload() } });
+    });
+    const t = setInterval(() => session.me && pollActive(), 4000);
+    const s = setInterval(() => session.me && loadSystem(), 5 * 60_000);
+    return () => (clearInterval(t), clearInterval(s));
   });
 
-  const isAdmin = $derived(me?.user.role === "owner" || me?.user.role === "admin");
+  $effect(() => {
+    if (session.me) pollActive();
+  });
+  // Close the mobile nav on navigation.
+  $effect(() => {
+    router.path;
+    navOpen = false;
+  });
+
+  const admin = $derived(isAdmin());
   const nav = $derived([
-    { path: "/", label: "Repositories" },
-    { path: "/jobs", label: "Jobs" },
-    { path: "/stats", label: "Statistics" },
-    ...(isAdmin ? [{ path: "/users", label: "Users" }, { path: "/audit", label: "Audit log" }] : []),
-    { path: "/tokens", label: "API tokens" },
+    { path: "/", label: "Dashboard", icon: LayoutDashboard },
+    { path: "/repos", label: "Repositories", icon: Database },
+    { path: "/jobs", label: "Jobs", icon: ListChecks },
+    { path: "/stats", label: "Statistics", icon: ChartColumn },
+    ...(admin ? [{ path: "/users", label: "Users", icon: UsersIcon }, { path: "/audit", label: "Audit log", icon: ScrollText }] : []),
+    { path: "/tokens", label: "API tokens", icon: KeyRound },
   ]);
   const repoParams = $derived(matchRoute("/repos/:slug"));
+  const isActive = (p: string) => (p === "/" ? router.path === "/" : router.path.startsWith(p));
 
   async function signOut() {
     await logout();
-    me = null;
+    session.me = null;
+    expired = false;
+    navigate("/");
   }
+  const ThemeIcon = $derived(theme.value === "light" ? Sun : theme.value === "system" ? Monitor : Moon);
 </script>
 
 <Toasts />
 {#if loading}
-  <div class="empty">Loading…</div>
-{:else if !me}
-  <Login onlogin={(m) => (me = m)} />
+  <div class="center"><Logo size={44} /></div>
+{:else if !session.me}
+  <Login
+    {expired}
+    onlogin={async (m) => {
+      session.me = m;
+      expired = false;
+      await loadSystem();
+    }}
+  />
 {:else}
   <div class="layout">
-    <aside>
-      <a class="brand" href="#/">ArmaXSync</a>
-      <nav>
+    <header class="mbar">
+      <button class="btn ghost icon" aria-label="Open navigation" onclick={() => (navOpen = true)}><MenuIcon size={20} /></button>
+      <Logo size={26} wordmark />
+    </header>
+    {#if navOpen}<div class="scrim" role="presentation" onclick={() => (navOpen = false)}></div>{/if}
+    <aside class:open={navOpen}>
+      <div class="brandrow">
+        <a class="brand" href="#/"><Logo size={32} wordmark sub="Server admin" /></a>
+        <button class="btn ghost icon close" aria-label="Close navigation" onclick={() => (navOpen = false)}><X size={18} /></button>
+      </div>
+      <nav aria-label="Main">
         {#each nav as n}
-          <a href={"#" + n.path} class:active={n.path === "/" ? router.path === "/" || router.path.startsWith("/repos") : router.path.startsWith(n.path)}>{n.label}</a>
+          <a href={"#" + n.path} class:active={isActive(n.path)} aria-current={isActive(n.path) ? "page" : undefined}>
+            <n.icon size={18} /><span>{n.label}</span>
+            {#if n.path === "/jobs" && session.active.length}<span class="count">{session.active.length}</span>{/if}
+          </a>
         {/each}
       </nav>
       <div class="spacer"></div>
-      <div class="user small">
-        <div><b>{me.user.username}</b> <span class="muted">({me.user.role})</span></div>
-        <div class="row"><a href="/" target="_blank">Public page</a> · <button class="btn ghost small" onclick={signOut}>Sign out</button></div>
+      {#if session.active.length}
+        <button class="running" onclick={() => openJob(session.active[0].id)}>
+          <LoaderCircle size={15} class="spin" />
+          <span class="grow ellipsis">{jobLabel(session.active[0].kind)}{session.active[0].repo ? ` · ${session.active[0].repo}` : ""}</span>
+          {#if session.active.length > 1}<span class="xs subtle">+{session.active.length - 1}</span>{/if}
+        </button>
+      {/if}
+      <div class="foot">
+        <Menu
+          align="left"
+          items={[
+            { label: "Dark theme", icon: Moon, onclick: () => setTheme("dark") },
+            { label: "Light theme", icon: Sun, onclick: () => setTheme("light") },
+            { label: "System theme", icon: Monitor, onclick: () => setTheme("system") },
+            { divider: true },
+            { label: "Public page", icon: ExternalLink, onclick: () => window.open("/", "_blank", "noopener") },
+            { label: "Sign out", icon: LogOut, onclick: signOut },
+          ]}
+        >
+          {#snippet trigger()}
+            <span class="user">
+              <span class="av"><UserRound size={16} /></span>
+              <span class="grow" style="min-width:0">
+                <span class="strong ellipsis" style="display:block">{session.me!.user.username}</span>
+                <span class="xs subtle">{session.me!.user.role}{session.system ? ` · v${session.system.version}` : ""}</span>
+              </span>
+              <ThemeIcon size={15} class="subtle" />
+            </span>
+          {/snippet}
+        </Menu>
       </div>
     </aside>
+
     <main>
+      <UpdateBanner />
       {#if repoParams}
-        {#key repoParams.slug}<Repo slug={repoParams.slug} {isAdmin} />{/key}
+        {#key repoParams.slug}<Repo slug={repoParams.slug} />{/key}
+      {:else if router.path === "/repos"}
+        <Repos />
       {:else if router.path === "/jobs"}
         <Jobs />
-      {:else if router.path === "/users" && isAdmin}
-        <Users self={me.user.user_id} />
+      {:else if router.path === "/users" && admin}
+        <Users />
       {:else if router.path === "/tokens"}
-        <Tokens {isAdmin} />
-      {:else if router.path === "/audit" && isAdmin}
+        <Tokens />
+      {:else if router.path === "/audit" && admin}
         <Audit />
       {:else if router.path === "/stats"}
         <Stats />
       {:else if router.path === "/"}
-        <Repos {isAdmin} />
+        <Dashboard />
       {:else}
-        <div class="empty">Not found. <a href="#/" onclick={() => navigate("/")}>Back</a></div>
+        <div class="card"><div class="empty">Page not found. <a href="#/">Dashboard</a></div></div>
       {/if}
     </main>
+  </div>
+  <JobDrawer />
+{/if}
+
+{#if session.restarting}
+  <div class="restart">
+    <div class="card stack" style="align-items:center;text-align:center;max-width:420px">
+      <Spinner size={28} label="" />
+      <h2 style="margin:0">Updating to {session.restarting}</h2>
+      <p class="muted small">The server installs the update and restarts. This page reloads when it is back.</p>
+      <Button size="sm" variant="ghost" onclick={() => (session.restarting = null)}>Hide</Button>
+    </div>
   </div>
 {/if}
 
 <style>
-  .layout { display: grid; grid-template-columns: 210px 1fr; min-height: 100vh; }
-  aside { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 14px 10px; gap: 14px; position: sticky; top: 0; height: 100vh; }
-  .brand { font-weight: 700; font-size: 17px; color: var(--fg); padding: 4px 8px; }
+  .center { display: grid; place-items: center; height: 100vh; }
+  .layout { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
+  aside {
+    position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 6px;
+    background: var(--surface-1); border-right: 1px solid var(--line); padding: 14px 10px 10px; z-index: 40;
+  }
+  .brandrow { display: flex; align-items: center; padding: 2px 6px 14px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+  .brand { color: var(--fg); text-decoration: none; flex: 1; }
+  .close { display: none; }
   nav { display: flex; flex-direction: column; gap: 2px; }
-  nav a { padding: 7px 10px; border-radius: 7px; color: var(--fg); }
-  nav a:hover { background: var(--panel-2); text-decoration: none; }
-  nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  nav a {
+    display: flex; align-items: center; gap: 11px; height: 38px; padding: 0 11px; border-radius: var(--r); position: relative;
+    color: var(--fg-2); text-decoration: none; font-family: var(--font-display); font-weight: 600; font-size: 15.5px; letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  nav a:hover { background: var(--surface-2); color: var(--fg); }
+  nav a.active { background: var(--accent-soft); color: var(--fg); }
+  nav a.active::before { content: ""; position: absolute; left: -10px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
+  nav a.active :global(svg) { color: var(--accent); }
+  .count { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; display: grid; place-items: center; background: var(--accent); color: var(--accent-fg); font: 700 11px/1 var(--font); }
   .spacer { flex: 1; }
-  .user { padding: 8px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
-  main { padding: 22px; min-width: 0; max-width: 1200px; }
-  @media (max-width: 760px) {
+  .running {
+    display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: var(--r); border: 1px solid var(--accent-line);
+    background: var(--accent-soft); color: var(--fg); font: inherit; font-size: 13px; cursor: pointer; text-align: left;
+  }
+  .running :global(.spin) { animation: axs-spin 0.9s linear infinite; color: var(--accent); }
+  .foot { border-top: 1px solid var(--line); padding-top: 8px; }
+  .foot :global(.menu) { display: flex; }
+  .user { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: var(--r); width: 100%; }
+  .user:hover { background: var(--surface-2); }
+  .av { width: 30px; height: 30px; border-radius: 50%; background: var(--surface-3); display: grid; place-items: center; color: var(--fg-2); flex-shrink: 0; }
+  main { padding: 26px 30px 48px; min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+  .mbar { display: none; }
+  .scrim { display: none; }
+  .restart { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; background: var(--overlay); backdrop-filter: blur(3px); padding: 16px; }
+
+  @media (max-width: 860px) {
     .layout { grid-template-columns: 1fr; }
-    aside { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; }
-    nav { flex-direction: row; flex-wrap: wrap; }
-    .spacer, .user { display: none; }
-    main { padding: 14px; }
+    .mbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--surface-1); position: sticky; top: 0; z-index: 30; }
+    aside { position: fixed; left: 0; top: 0; bottom: 0; width: min(280px, 86vw); transform: translateX(-100%); transition: transform 180ms var(--ease); box-shadow: var(--shadow-lg); }
+    aside.open { transform: none; }
+    .close { display: inline-flex; }
+    .scrim { display: block; position: fixed; inset: 0; background: var(--overlay); z-index: 35; }
+    main { padding: 16px 14px 40px; }
   }
 </style>

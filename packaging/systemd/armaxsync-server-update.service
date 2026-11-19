@@ -1,0 +1,9 @@
+[Unit]
+Description=Install a staged ArmaXSync server update
+After=armaxsync-server.service
+
+[Service]
+Type=oneshot
+Environment=ARMAXSYNC_CONFIG=/etc/armaxsync/config.toml
+Environment=ARMAXSYNC_UPDATE_DIR=/var/lib/armaxsync/update
+ExecStart=/usr/lib/armaxsync/update-helper

@@ -25,18 +25,52 @@
   },
   "plugins": {
     "deep-link": {
-      "desktop": { "schemes": ["armaxsync"] }
+      "desktop": {
+        "schemes": [
+          "armaxsync"
+        ]
+      }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE0NjZBMTY1ODE3Q0M1NTcKUldSWHhYeUJaYUZtcEoybzNISFlqbFRFc3ZrdEtjUjRwN1NOM1BhL3JTcHNrYWxoMXlYcVA5djQK",
+      "endpoints": [
+        "https://github.com/ilbinek/ArmaXSync/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi", "appimage", "deb", "rpm"],
+    "targets": [
+      "nsis",
+      "msi",
+      "appimage",
+      "deb",
+      "rpm"
+    ],
     "category": "Game",
     "shortDescription": "Arma mod repository sync and launcher",
     "longDescription": "Synchronize Arma 3 mod repositories (ArmA3Sync compatible) and launch the game with your modsets.",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "license": "GPL-3.0-or-later",
-    "linux": { "deb": { "depends": [] } },
-    "windows": { "nsis": { "installMode": "currentUser" } }
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "createUpdaterArtifacts": true
   }
 }

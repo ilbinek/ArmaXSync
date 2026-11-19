@@ -88,6 +88,9 @@ pub fn router(state: Shared) -> Router {
         .route("/audit", get(crate::audit::list))
         .route("/stats", get(crate::stats::stats))
         .route("/server", get(server_info))
+        .route("/system", get(system_info))
+        .route("/system/update/check", post(update_check))
+        .route("/system/update/install", post(update_install))
         .merge(crate::repos_api::routes())
         .merge(crate::changes::routes())
         .merge(crate::push::routes())
@@ -103,7 +106,17 @@ pub fn router(state: Shared) -> Router {
         .route("/healthz", get(|| async { "ok" }))
         .merge(crate::web::routes())
         .fallback(fallback)
+        .layer(axum::middleware::map_response(version_header))
         .with_state(state)
+}
+
+/// Lets open admin pages notice that the server was updated underneath them.
+async fn version_header(mut res: Response) -> Response {
+    res.headers_mut().insert(
+        "x-axs-version",
+        axum::http::HeaderValue::from_static(env!("CARGO_PKG_VERSION")),
+    );
+    res
 }
 
 async fn serve_repo(State(state): State<Shared>, req: Request) -> Response {
@@ -552,6 +565,10 @@ pub struct JobOut {
 struct JobQuery {
     repo: Option<String>,
     limit: Option<i64>,
+    /// `active` (queued or running), or one status.
+    status: Option<String>,
+    /// Only jobs with an id below this (paging).
+    before: Option<i64>,
 }
 
 fn job_row(r: &rusqlite::Row, with_log: bool) -> rusqlite::Result<JobOut> {
@@ -579,12 +596,14 @@ async fn list_jobs(
 ) -> ApiResult<Json<Vec<JobOut>>> {
     let limit = q.limit.unwrap_or(50).clamp(1, 500);
     let repo = q.repo.clone();
+    let status = q.status.clone().filter(|s| !s.is_empty());
+    let before = q.before;
     let rows: Vec<(JobOut, Option<i64>)> = state
         .db
         .call(move |c| {
-            let sql = format!("SELECT {JOB_COLS} FROM jobs j LEFT JOIN repos r ON r.id=j.repo_id WHERE (?1 IS NULL OR r.slug=?1) ORDER BY j.id DESC LIMIT ?2");
+            let sql = format!("SELECT {JOB_COLS} FROM jobs j LEFT JOIN repos r ON r.id=j.repo_id WHERE (?1 IS NULL OR r.slug=?1) AND (?3 IS NULL OR (?3='active' AND j.status IN ('queued','running')) OR j.status=?3) AND (?4 IS NULL OR j.id < ?4) ORDER BY j.id DESC LIMIT ?2");
             let mut st = c.prepare(&sql)?;
-            let r = st.query_map(rusqlite::params![repo, limit], |r| Ok((job_row(r, false)?, r.get(10)?)))?;
+            let r = st.query_map(rusqlite::params![repo, limit, status, before], |r| Ok((job_row(r, false)?, r.get(10)?)))?;
             r.collect()
         })
         .await
@@ -711,6 +730,81 @@ async fn server_info(State(state): State<Shared>, _p: Principal) -> Json<serde_j
         "started": state.started,
         "repositories": state.repo_list().len(),
     }))
+}
+
+/// Version, install kind and update status (any signed-in user; update
+/// details only for admins).
+async fn system_info(State(state): State<Shared>, p: Principal) -> Json<serde_json::Value> {
+    let mut v = serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "public_url": state.cfg.public_url,
+        "started": state.started,
+        "repositories": state.repo_list().len(),
+    });
+    if p.is_admin() {
+        v["update"] =
+            serde_json::to_value(state.updates.snapshot(&state.cfg.data_dir)).unwrap_or_default();
+    }
+    Json(v)
+}
+
+async fn update_check(
+    State(state): State<Shared>,
+    p: Principal,
+) -> ApiResult<Json<crate::updates::UpdateStatus>> {
+    p.require_admin()?;
+    crate::updates::check(&state)
+        .await
+        .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, format!("{e:#}")))?;
+    Ok(Json(state.updates.snapshot(&state.cfg.data_dir)))
+}
+
+#[derive(Deserialize)]
+struct InstallReq {
+    version: String,
+}
+
+async fn update_install(
+    State(state): State<Shared>,
+    p: Principal,
+    Json(req): Json<InstallReq>,
+) -> ApiResult<Json<serde_json::Value>> {
+    if p.role != Role::Owner || p.scopes.is_some() {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "only the owner can install updates (from the web UI)",
+        ));
+    }
+    let st = state.updates.snapshot(&state.cfg.data_dir);
+    if !st.can_install {
+        return Err(ApiError::conflict(match st.install_kind {
+            crate::updates::InstallKind::Systemd => {
+                "no installable update; check for updates first"
+            }
+            _ => "this server cannot update itself; update the container or binary instead",
+        }));
+    }
+    if st.staged.is_some() {
+        return Err(ApiError::conflict("an update is already being installed"));
+    }
+    let latest = st.latest.map(|l| l.version).unwrap_or_default();
+    if latest != req.version {
+        return Err(ApiError::conflict(format!(
+            "the available version is {latest}, not {}",
+            req.version
+        )));
+    }
+    let job = crate::updates::start_install(&state, req.version.clone(), Some(p.user_id)).await?;
+    crate::audit::record(
+        &state,
+        Some(&p),
+        "server.update",
+        None,
+        Some(serde_json::json!({"from": env!("CARGO_PKG_VERSION"), "to": req.version})),
+        None,
+    )
+    .await;
+    Ok(Json(serde_json::json!({"job": job})))
 }
 
 pub fn header_str<'a>(h: &'a HeaderMap, name: &str) -> Option<&'a str> {
