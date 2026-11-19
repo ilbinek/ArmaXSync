@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { bytes, date, router, navigate, toast } from "@axs/kit";
+  import { bytes, date, router, navigate, toast, copyText } from "@axs/kit";
   import { get, post, del } from "../api";
   import Files from "./repo/Files.svelte";
   import Events from "./repo/Events.svelte";
@@ -62,9 +62,9 @@
     navigate("/");
   }
 
-  function copy(text: string) {
-    navigator.clipboard.writeText(text);
-    toast("Copied");
+  async function copy(text: string) {
+    if (await copyText(text)) toast("Copied");
+    else toast("Copy failed — select the text and press Ctrl+C", "err");
   }
 </script>
 

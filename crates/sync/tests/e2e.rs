@@ -210,3 +210,28 @@ async fn modern_end_to_end() {
 async fn legacy_end_to_end() {
     scenario(false).await;
 }
+
+/// A damaged `.pbo.zip` on the server (seen with the legacy Java builder)
+/// falls back to downloading the uncompressed file.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn broken_zip_falls_back_to_plain_file() {
+    let www = tempfile::tempdir().unwrap();
+    let dest = tempfile::tempdir().unwrap();
+    let src = www.path();
+    let data = pseudo(300_000, 42);
+    write(src, "@m/addons/a.pbo", &data);
+    let port = serve(src).await;
+    build(src, port, true);
+    let zip = src.join("@m/addons/a.pbo.zip");
+    assert!(zip.exists());
+    // Truncate the archive: still starts like a zip, but is unreadable.
+    let z = std::fs::read(&zip).unwrap();
+    std::fs::write(&zip, &z[..z.len() / 2]).unwrap();
+    for modern in [true, false] {
+        let d = dest.path().join(if modern { "m" } else { "l" });
+        std::fs::create_dir_all(&d).unwrap();
+        let (_, r, _) = sync_once(port, &d, modern, false, 0).await;
+        assert!(r.ok(), "{:?}", r.failed);
+        assert_eq!(std::fs::read(d.join("@m/addons/a.pbo")).unwrap(), data);
+    }
+}

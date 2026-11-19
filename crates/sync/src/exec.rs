@@ -379,9 +379,11 @@ async fn fetch_once(
             .unwrap_or(false)
         && (opts.ranges || !t.is_http());
 
+    // After a failed attempt, prefer the plain file: some legacy builders
+    // (ArmA3Sync on certain JDKs) publish damaged .pbo.zip files.
     let use_zip = job.zip_size.is_some()
         && job.path.to_lowercase().ends_with(".pbo")
-        && (opts.compressed_only || !resumable);
+        && (opts.compressed_only || (!resumable && !force_full));
     let try_delta = !force_full
         && !resumable
         && opts.ranges
@@ -422,8 +424,18 @@ async fn fetch_once(
             .await?;
         drop(f);
         let (zp, pp) = (zpart.clone(), part.clone());
-        blocking(move || unzip_first(&zp, &pp)).await?;
+        let unzipped = blocking(move || unzip_first(&zp, &pp)).await;
         let _ = std::fs::remove_file(&zpart);
+        if let Err(e) = unzipped {
+            // Treat a damaged archive like a checksum failure so the caller
+            // retries with the uncompressed file.
+            let _ = std::fs::remove_file(&part);
+            return Err(SyncError::Verify {
+                path: job.path.clone(),
+                expected: job.sha1.clone(),
+                actual: format!("unreadable .pbo.zip ({e})"),
+            });
+        }
         finish(&part, &dest, &part_meta, job).await?;
         return Ok((got.bytes, 0));
     }

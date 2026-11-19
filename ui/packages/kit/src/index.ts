@@ -5,3 +5,4 @@ export { toast, toasts } from "./toast.svelte";
 export { router, navigate, matchRoute } from "./router.svelte";
 export { t, setMessages } from "./i18n";
 export * from "./format";
+export { copyText } from "./clipboard";

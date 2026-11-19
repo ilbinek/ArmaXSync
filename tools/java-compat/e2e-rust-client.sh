@@ -59,7 +59,7 @@ import sys
 p=sys.argv[1]; b=bytearray(open(p,'rb').read()); b[700000:700050]=b'Z'*50; open(p,'wb').write(bytes(b))
 PYEOF
 legacy_build no
-OUT=$("$AXS" sync JRepo --json --quiet)
+OUT=$("$AXS" sync JRepo --json --quiet) || { echo "$OUT"; echo "FAIL: sync exited with an error"; exit 1; }
 echo "$OUT" | grep -q '"method":"delta"' && echo "PASS: delta used against legacy .zsync" || { echo "$OUT" | head -20; echo "FAIL: no delta"; exit 1; }
 compare "Rust client: delta sync from legacy-built repo"
 
@@ -72,7 +72,7 @@ if [ "$JAVA_MAJOR" -gt 8 ]; then
 fi
 legacy_build yes
 rm "$WORK/dest/@cba/addons/cba.pbo"
-OUT=$("$AXS" sync JRepo --json --quiet)
+OUT=$("$AXS" sync JRepo --json --quiet) || { echo "$OUT"; echo "FAIL: sync exited with an error"; exit 1; }
 echo "$OUT" | grep -q '"method":"zip"' && echo "PASS: legacy .pbo.zip used" || { echo "$OUT" | head; echo "FAIL: zip not used"; exit 1; }
 compare "Rust client: compressed legacy repo"
 "$AXS" verify JRepo && echo "PASS: verify"

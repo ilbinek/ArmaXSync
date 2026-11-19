@@ -66,7 +66,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:6px 4px;
 
 fn page(title: &str, body: &str) -> Html<String> {
     Html(format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><style>{STYLE}</style></head><body><header><div class=\"in\"><b>ArmaXSync</b><span class=\"muted\">mod repositories</span><a href=\"/admin/\">Admin</a></div></header><main>{body}</main><script>document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{{navigator.clipboard.writeText(b.dataset.copy);b.textContent='Copied';setTimeout(()=>b.textContent='Copy',1500)}}))</script></body></html>",
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><style>{STYLE}</style></head><body><header><div class=\"in\"><b>ArmaXSync</b><span class=\"muted\">mod repositories</span><a href=\"/admin/\">Admin</a></div></header><main>{body}</main><script>function axsCopy(t){{if(navigator.clipboard&&window.isSecureContext)return navigator.clipboard.writeText(t).then(()=>true,()=>false);var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.top='-1000px';document.body.appendChild(a);a.select();var ok=false;try{{ok=document.execCommand('copy')}}catch(e){{}}document.body.removeChild(a);return Promise.resolve(ok)}}document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{{axsCopy(b.dataset.copy).then(ok=>{{b.textContent=ok?'Copied':'Press Ctrl+C';setTimeout(()=>b.textContent='Copy',1500)}})}}))</script></body></html>",
         esc(title)
     ))
 }
