@@ -2,7 +2,8 @@
 # End-to-end: the legacy ArmA3Sync client syncs from repositories built by
 # `armaxsync build`, served by a range-capable static HTTP server.
 # Requires: ./build-legacy-app.sh, cargo build -p armaxsync, python3, java.
-set -euo pipefail
+set -Eeuo pipefail
+trap 'echo "FAIL: line $LINENO: $BASH_COMMAND (exit $?)" >&2' ERR
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$HERE/../.."
 winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi; }
@@ -21,7 +22,7 @@ PORT="${PORT:-18734}"
 PY=""; for c in python3 python; do if command -v "$c" >/dev/null 2>&1 && "$c" -c "import sys" >/dev/null 2>&1; then PY="$(command -v "$c")"; break; fi; done
 SRV=""
 WORK="$(mktemp -d)"
-trap 'kill $SRV 2>/dev/null || true; if [ -z "${KEEP:-}" ]; then rm -rf "$WORK"; else echo "kept $WORK"; fi' EXIT
+trap 'kill $SRV 2>/dev/null || true; if [ -z "${KEEP:-}" ]; then rm -rf "$WORK" 2>/dev/null || true; else echo "kept $WORK"; fi' EXIT
 mkdir -p "$WORK/www/repo" "$WORK/client" "$WORK/dest"
 REPO="$WORK/www/repo"
 

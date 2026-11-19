@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end: the ArmaXSync CLI syncs from a repository built by the legacy
 # ArmA3Sync builder (Java), served by a range-capable static HTTP server.
-set -euo pipefail
+set -Eeuo pipefail
+trap 'echo "FAIL: line $LINENO: $BASH_COMMAND (exit $?)" >&2' ERR
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$HERE/../.."
 winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi; }
@@ -20,7 +21,7 @@ PORT="${PORT:-18735}"
 PY=""; for c in python3 python; do if command -v "$c" >/dev/null 2>&1 && "$c" -c "import sys" >/dev/null 2>&1; then PY="$(command -v "$c")"; break; fi; done
 SRV=""
 WORK="$(mktemp -d)"
-trap 'kill $SRV 2>/dev/null || true; if [ -z "${KEEP:-}" ]; then rm -rf "$WORK"; else echo "kept $WORK"; fi' EXIT
+trap 'kill $SRV 2>/dev/null || true; if [ -z "${KEEP:-}" ]; then rm -rf "$WORK" 2>/dev/null || true; else echo "kept $WORK"; fi' EXIT
 mkdir -p "$WORK/www/repo" "$WORK/client" "$WORK/dest" "$WORK/home"
 REPO="$WORK/www/repo"
 export ARMAXSYNC_HOME="$(winpath "$WORK/home")"
@@ -36,7 +37,9 @@ legacy_build() {
   rm -f "$WORK"/client/resources/ftp/*
   printf 'NEW\nJRepo\nHTTP\n%s\nanonymous\n\n127.0.0.1/repo\n%s\nBUILD\nJRepo\n3\n%s\nyes\n\n\nQUIT\n' "$PORT" "$(winpath "$REPO")" "$1" \
     | legacy -console > "$WORK/legacy-build.log" 2>&1 || true
-  grep -q "build finished" "$WORK/legacy-build.log" || { tail -30 "$WORK/legacy-build.log"; echo "FAIL: legacy build"; exit 1; }
+  if ! grep -q "build finished." "$WORK/legacy-build.log" || grep -q "build finished with error" "$WORK/legacy-build.log"; then
+    tail -40 "$WORK/legacy-build.log"; echo "FAIL: legacy build"; exit 1
+  fi
 }
 compare() {
   if diff -r -x .a3s -x .axs -x '*.zsync' -x '*.pbo.zip' "$REPO" "$WORK/dest" > "$WORK/diff.txt"; then echo "PASS: $1"; else cat "$WORK/diff.txt"; echo "FAIL: $1"; exit 1; fi

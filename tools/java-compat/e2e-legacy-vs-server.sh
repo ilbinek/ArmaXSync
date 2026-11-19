@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end: the legacy ArmA3Sync client syncs from armaxsync-server.
-set -euo pipefail
+set -Eeuo pipefail
+trap 'echo "FAIL: line $LINENO: $BASH_COMMAND (exit $?)" >&2' ERR
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$HERE/../.."
 winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi; }
@@ -18,7 +19,7 @@ esac
 PORT="${PORT:-18736}"
 PY=""; for c in python3 python; do if command -v "$c" >/dev/null 2>&1 && "$c" -c "import sys" >/dev/null 2>&1; then PY="$(command -v "$c")"; break; fi; done
 WORK="$(mktemp -d)"; SRV=""
-trap 'kill $SRV 2>/dev/null || true; if [ -z "${KEEP:-}" ]; then rm -rf "$WORK"; else echo "kept $WORK"; fi' EXIT
+trap 'kill $SRV 2>/dev/null || true; if [ -z "${KEEP:-}" ]; then rm -rf "$WORK" 2>/dev/null || true; else echo "kept $WORK"; fi' EXIT
 mkdir -p "$WORK/data" "$WORK/content" "$WORK/client" "$WORK/dest"
 C="$WORK/content"
 gen() { "$PY" -c "import sys,random; random.seed(int(sys.argv[2])); open(sys.argv[1],'wb').write(bytes(random.getrandbits(8) for _ in range(int(sys.argv[3]))))" "$1" "$2" "$3"; }

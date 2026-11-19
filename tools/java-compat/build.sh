@@ -2,7 +2,8 @@
 # Compiles the subset of the original Arma3Sync domain classes that make up the
 # repository wire format, plus the ArmaXSync compatibility harness.
 # Usage: tools/java-compat/build.sh [path-to-arma3sync-src]
-set -euo pipefail
+set -Eeuo pipefail
+trap 'echo "FAIL: line $LINENO: $BASH_COMMAND (exit $?)" >&2' ERR
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="${1:-${A3S_SRC:-$HERE/../../../arma3-sync/ArmA3Sync/src}}"
 OUT="$HERE/build"

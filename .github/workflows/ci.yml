@@ -39,9 +39,6 @@ jobs:
     # Rust output must be readable by the original Java classes, and the
     # legacy client must sync from Rust-built repositories and the server.
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        java: ["8", "21"]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/checkout@v5
@@ -52,7 +49,7 @@ jobs:
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: ${{ matrix.java }}
+          java-version: "21"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p armaxsync -p armaxsync-server

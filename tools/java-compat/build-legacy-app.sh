@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds the complete legacy ArmA3Sync client from source (for end-to-end
 # tests on JDK 8 or newer). Output: tools/java-compat/build/legacy-app/{classes,lib}
-set -euo pipefail
+set -Eeuo pipefail
+trap 'echo "FAIL: line $LINENO: $BASH_COMMAND (exit $?)" >&2' ERR
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APP="${1:-${A3S_APP:-$HERE/../../../arma3-sync/ArmA3Sync}}"
 OUT="$HERE/build/legacy-app"
