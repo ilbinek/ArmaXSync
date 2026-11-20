@@ -162,7 +162,7 @@ dependencies = [
 
 [[package]]
 name = "armaxsync"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axs-build",
@@ -186,7 +186,7 @@ dependencies = [
 
 [[package]]
 name = "armaxsync-gui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axs-build",
  "axs-client",
@@ -210,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "armaxsync-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -465,7 +465,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "axs-build"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axs-legacy",
  "axs-model",
@@ -487,7 +487,7 @@ dependencies = [
 
 [[package]]
 name = "axs-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axs-build",
  "axs-launcher",
@@ -513,7 +513,7 @@ dependencies = [
 
 [[package]]
 name = "axs-javaser"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "thiserror 2.0.21",
@@ -521,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "axs-launcher"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axs-model",
  "directories",
@@ -537,7 +537,7 @@ dependencies = [
 
 [[package]]
 name = "axs-legacy"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes",
  "axs-javaser",
@@ -550,7 +550,7 @@ dependencies = [
 
 [[package]]
 name = "axs-model"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axs-legacy",
  "serde",
@@ -561,7 +561,7 @@ dependencies = [
 
 [[package]]
 name = "axs-sync"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axs-build",
  "axs-legacy",
@@ -584,7 +584,7 @@ dependencies = [
 
 [[package]]
 name = "axs-transport"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axs-legacy",
  "bytes",
@@ -600,7 +600,7 @@ dependencies = [
 
 [[package]]
 name = "axs-zsync"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "md4",

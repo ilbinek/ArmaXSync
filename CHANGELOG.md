@@ -6,6 +6,8 @@ Run `task release:bump -- X.Y.Z` to turn "Unreleased" into a version.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-20
+
 ### Added
 - Automatic updates: the desktop app installs signed updates from GitHub releases; the server checks for new releases, shows them in the admin UI and can update itself with one click when run under systemd.
 - Signed release artifacts, `SHA256SUMS`, and `server-latest.json` / `latest.json` update manifests.
