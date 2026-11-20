@@ -45,10 +45,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           bash tools/release/notes.sh "${{ steps.v.outputs.version }}" > notes.md
-          flags=(--draft --verify-tag --title "ArmaXSync $GITHUB_REF_NAME" --notes-file notes.md)
-          [[ "${{ steps.v.outputs.prerelease }}" == true ]] && flags+=(--prerelease)
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" "${flags[@]}"
+          # Reuse the draft on a re-run; otherwise create it and take the id from
+          # the create response (the release list can lag behind a fresh draft,
+          # and an empty id makes tauri-action build without uploading).
           id="$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq ".[] | select(.tag_name == \"$GITHUB_REF_NAME\") | .id" | head -1)"
+          if [[ -z "$id" ]]; then
+            id="$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$GITHUB_REF_NAME" -f name="ArmaXSync $GITHUB_REF_NAME" -F body=@notes.md \
+              -F draft=true -F prerelease=${{ steps.v.outputs.prerelease }} --jq .id)"
+          fi
+          [[ "$id" =~ ^[0-9]+$ ]] || { echo "::error::could not find or create the release for $GITHUB_REF_NAME"; exit 1; }
+          echo "release id: $id"
           echo "id=$id" >> "$GITHUB_OUTPUT"
 
   ui:
@@ -120,6 +127,9 @@ jobs:
         with: { node-version: 22 }
       - uses: dtolnay/rust-toolchain@stable
       - run: pnpm -C ui install --frozen-lockfile
+      - name: Check release id
+        shell: bash
+        run: '[[ -n "${{ needs.prepare.outputs.release_id }}" ]] || { echo "::error::no release id from prepare"; exit 1; }'
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -194,6 +204,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          # Never publish without the desktop installers and their update manifest.
+          names="$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')"
+          for want in latest.json server-latest.json SHA256SUMS; do
+            grep -qx "$want" <<<"$names" || { echo "::error::$want is missing from the release"; exit 1; }
+          done
+          grep -q -- '-setup\.exe$' <<<"$names" && grep -q '\.AppImage$' <<<"$names" \
+            || { echo "::error::desktop installers are missing from the release"; exit 1; }
           flags=(--draft=false)
           [[ "${{ needs.prepare.outputs.prerelease }}" == false ]] && flags+=(--latest)
           gh release edit "$GITHUB_REF_NAME" "${flags[@]}"

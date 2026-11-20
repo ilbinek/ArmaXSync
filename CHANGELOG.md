@@ -6,6 +6,11 @@ Run `task release:bump -- X.Y.Z` to turn "Unreleased" into a version.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-20
+
+### Fixed
+- The desktop installers and the desktop update manifest are attached to the release (0.2.0 shipped without them). The release workflow now refuses to publish a release that is missing them.
+
 ## [0.2.0] - 2026-11-20
 
 ### Added
