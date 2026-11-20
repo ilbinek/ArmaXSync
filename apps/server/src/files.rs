@@ -4,6 +4,7 @@
 //! * single byte ranges, clamped to the file length, exact Content-Length;
 //! * never compressed; HTTP Basic auth for private repositories.
 
+use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -17,6 +18,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use axs_model::paths::sanitize_rel_path;
 
 use crate::state::{AppState, RepoRuntime, Visibility};
+use crate::stats::collect::{self, Download, Kind, Req};
 
 /// Split `/r/<slug>/<rest>` (raw, undecoded path).
 pub fn split_repo_path(raw: &str) -> Option<(String, String)> {
@@ -198,12 +200,38 @@ pub async fn serve(
     raw_rest: &str,
     method: &Method,
     headers: &HeaderMap,
+    peer: Option<SocketAddr>,
 ) -> Response {
     let Some(rt) = state.repo(slug) else {
         return not_found();
     };
     rt.requests.fetch_add(1, Ordering::Relaxed);
-    if !authorized(&rt, headers) {
+    let ip = crate::auth::client_ip(&state, peer, headers);
+    let ua = headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok());
+    let mut req = Req::new(
+        state.stats.clone(),
+        rt.record().id,
+        ua,
+        ip,
+        method == Method::HEAD,
+    );
+    let resp = serve_inner(&state, &rt, slug, raw_rest, method, headers, &mut req).await;
+    req.finish(resp.status().as_u16());
+    resp
+}
+
+async fn serve_inner(
+    state: &Arc<AppState>,
+    rt: &Arc<RepoRuntime>,
+    slug: &str,
+    raw_rest: &str,
+    method: &Method,
+    headers: &HeaderMap,
+    req: &mut Req,
+) -> Response {
+    if !authorized(rt, headers) {
         return unauthorized(slug);
     }
     let head = method == Method::HEAD;
@@ -224,14 +252,34 @@ pub async fn serve(
         return (StatusCode::BAD_REQUEST, "bad path").into_response();
     };
     let range = headers.get(header::RANGE).and_then(|v| v.to_str().ok());
+    req.range = range.is_some();
 
     if metadata_key(&rel).is_some() {
+        req.kind = Kind::Meta;
+        req.check = collect::is_check(&rel);
         let p = rt.published.load();
         return match p.files.get(&rel) {
-            Some(b) => serve_bytes(b.clone(), range, head),
+            Some(b) => {
+                let r = serve_bytes(b.clone(), range, head);
+                if !head {
+                    req.meta_bytes = r
+                        .headers()
+                        .get(header::CONTENT_LENGTH)
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                }
+                r
+            }
             None => not_found(),
         };
     }
+    let sidecar = collect::is_sidecar(&rel);
+    req.kind = if sidecar {
+        Kind::Sidecar
+    } else {
+        Kind::Content
+    };
     let name = axs_model::paths::file_name(&rel);
     if name.ends_with(".axs-tmp") || name.ends_with(".axs-part") {
         return not_found();
@@ -283,6 +331,7 @@ pub async fn serve(
     if head {
         return (status, h, Body::empty()).into_response();
     }
+    let full = start == 0 && end == len;
     if start == 0 {
         rt.files_served.fetch_add(1, Ordering::Relaxed);
     }
@@ -290,11 +339,22 @@ pub async fn serve(
         return (StatusCode::INTERNAL_SERVER_ERROR, "seek failed").into_response();
     }
     // Download slots (global and per repository) for the body's lifetime.
+    let waited = std::time::Instant::now();
     let g = state.global_downloads.clone().acquire_owned().await;
     let r = rt.downloads.clone().acquire_owned().await;
     let (Ok(gp), Ok(rp)) = (g, r) else {
         return (StatusCode::SERVICE_UNAVAILABLE, "busy").into_response();
     };
+    let addon = collect::addon_of(&rel, &rt.published.load().addons);
+    let mut dl = Download::new(
+        state.stats.clone(),
+        rt.record().id,
+        addon,
+        sidecar,
+        full,
+        end - start,
+        waited.elapsed().as_millis() as u64,
+    );
     let state2 = state.clone();
     let rt2 = rt.clone();
     let stream = async_stream::stream! {
@@ -309,6 +369,7 @@ pub async fn serve(
                     state2.global_limiter.consume(n as u64).await;
                     rt2.limiter.consume(n as u64).await;
                     state2.note_served(&rt2, n as u64);
+                    dl.add(n as u64);
                     left -= n as u64;
                     yield Ok::<Bytes, std::io::Error>(Bytes::copy_from_slice(&buf[..n]));
                 }

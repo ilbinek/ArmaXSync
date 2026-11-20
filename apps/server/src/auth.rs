@@ -103,13 +103,7 @@ impl Principal {
 pub fn client_ip(state: &Shared, peer: Option<SocketAddr>, headers: &HeaderMap) -> Option<IpAddr> {
     let peer_ip = peer.map(|p| p.ip());
     let trusted = peer_ip
-        .map(|ip| {
-            state
-                .cfg
-                .trusted_proxies
-                .iter()
-                .any(|t| t.parse::<IpAddr>().ok() == Some(ip))
-        })
+        .map(|ip| state.cfg.trusted_proxies.iter().any(|t| ip_matches(t, ip)))
         .unwrap_or(false);
     if trusted {
         if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
@@ -123,6 +117,47 @@ pub fn client_ip(state: &Shared, peer: Option<SocketAddr>, headers: &HeaderMap) 
         }
     }
     peer_ip
+}
+
+/// `net` is an address (`10.0.0.1`) or a CIDR range (`172.16.0.0/12`).
+pub fn ip_matches(net: &str, ip: IpAddr) -> bool {
+    let net = net.trim();
+    let (addr, bits) = match net.split_once('/') {
+        Some((a, b)) => match b.parse::<u32>() {
+            Ok(b) => (a, Some(b)),
+            Err(_) => return false,
+        },
+        None => (net, None),
+    };
+    let Ok(base) = addr.parse::<IpAddr>() else {
+        return false;
+    };
+    // Compare IPv4-mapped IPv6 peers as IPv4.
+    let ip = match ip {
+        IpAddr::V6(v) => v.to_ipv4_mapped().map(IpAddr::V4).unwrap_or(ip),
+        v4 => v4,
+    };
+    match (base, ip) {
+        (IpAddr::V4(b), IpAddr::V4(i)) => {
+            let bits = bits.unwrap_or(32).min(32);
+            let mask = if bits == 0 {
+                0
+            } else {
+                u32::MAX << (32 - bits)
+            };
+            u32::from(b) & mask == u32::from(i) & mask
+        }
+        (IpAddr::V6(b), IpAddr::V6(i)) => {
+            let bits = bits.unwrap_or(128).min(128);
+            let mask = if bits == 0 {
+                0
+            } else {
+                u128::MAX << (128 - bits)
+            };
+            u128::from(b) & mask == u128::from(i) & mask
+        }
+        _ => false,
+    }
 }
 
 fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -481,4 +516,24 @@ pub async fn create_user(
             Ok(c.last_insert_rowid())
         })
         .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ip_matches;
+
+    #[test]
+    fn proxy_ranges() {
+        let ip = |s: &str| s.parse().unwrap();
+        assert!(ip_matches("127.0.0.1", ip("127.0.0.1")));
+        assert!(!ip_matches("127.0.0.1", ip("127.0.0.2")));
+        assert!(ip_matches("172.16.0.0/12", ip("172.18.0.3")));
+        assert!(!ip_matches("172.16.0.0/12", ip("172.32.0.1")));
+        assert!(ip_matches("172.16.0.0/12", ip("::ffff:172.20.1.1")));
+        assert!(ip_matches("fd00::/8", ip("fd12::1")));
+        assert!(!ip_matches("fd00::/8", ip("fe80::1")));
+        assert!(ip_matches("0.0.0.0/0", ip("8.8.8.8")));
+        assert!(!ip_matches("10.0.0.0/x", ip("10.0.0.1")));
+        assert!(!ip_matches("garbage", ip("10.0.0.1")));
+    }
 }

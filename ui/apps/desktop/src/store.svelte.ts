@@ -7,6 +7,8 @@ export const app = $state<{
   state: AppStateOut | null;
   profile: Profile | null;
   progress: Record<string, SyncProgress>;
+  /** Recent download speeds per repository (for sparklines). */
+  speeds: Record<string, number[]>;
   checking: boolean;
   /** Repositories being checked individually. */
   checkingRepo: Record<string, boolean>;
@@ -19,6 +21,7 @@ export const app = $state<{
   state: null,
   profile: null,
   progress: {},
+  speeds: {},
   checking: false,
   checkingRepo: {},
   update: null,
@@ -162,9 +165,14 @@ export function initEvents() {
   started = true;
   on<SyncProgress>("sync-progress", (p) => {
     app.progress[p.repo] = p;
+    const h = app.speeds[p.repo] ?? [];
+    h.push(p.speed);
+    if (h.length > 60) h.shift();
+    app.speeds[p.repo] = h;
   });
   on<any>("sync-done", async (p) => {
     delete app.progress[p.repo];
+    delete app.speeds[p.repo];
     await refresh();
     const r = p.outcome?.report;
     if (p.ok) {

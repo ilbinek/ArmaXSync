@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { PageHeader, Tabs, Button, Badge, Menu, Section, CopyField, Skeleton, EmptyState, Stat, bytes, date, ago, navigate, toast, toastError, confirmWithOption, errorText } from "@axs/kit";
-  import { Database, LayoutDashboard, FolderTree, CalendarDays, Settings2, ShieldCheck, Timer, ListChecks, Hammer, FolderSync, ExternalLink, Trash2, Lock, Globe, CircleAlert, RotateCw, Share2, LoaderCircle } from "@lucide/svelte";
+  import { Database, LayoutDashboard, ChartColumn, FolderTree, CalendarDays, Settings2, ShieldCheck, Timer, ListChecks, Hammer, FolderSync, ExternalLink, Trash2, Lock, Globe, CircleAlert, RotateCw, Share2, LoaderCircle } from "@lucide/svelte";
   import { get, post, del, type RepoDetail } from "../api";
   import { session, isAdmin, openJob } from "../session.svelte";
   import Files from "./repo/Files.svelte";
@@ -10,6 +10,7 @@
   import Access from "./repo/Access.svelte";
   import Automation from "./repo/Automation.svelte";
   import JobList from "../components/JobList.svelte";
+
 
   let { slug }: { slug: string } = $props();
   let repo = $state<RepoDetail | null>(null);
@@ -101,6 +102,7 @@
       param="tab"
       items={[
         { id: "overview", label: "Overview", icon: LayoutDashboard },
+        { id: "stats", label: "Stats", icon: ChartColumn },
         { id: "files", label: "Files", icon: FolderTree },
         { id: "events", label: "Events", icon: CalendarDays, count: repo.settings.events.length },
         { id: "settings", label: "Settings", icon: Settings2 },
@@ -139,6 +141,12 @@
           </Section>
         </div>
       </div>
+    {:else if tab === "stats"}
+      {#await import("../components/stats/StatsView.svelte")}
+        <Skeleton block height={320} />
+      {:then m}
+        <m.default repo={slug} />
+      {/await}
     {:else if tab === "files"}
       <Files {repo} />
     {:else if tab === "events"}

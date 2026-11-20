@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Drawer, Progress, EmptyState, activity, bytes, speed, duration, ago, navigate } from "@axs/kit";
+  import { Drawer, Progress, EmptyState, Sparkline, activity, bytes, speed, duration, ago, navigate } from "@axs/kit";
   import { Download, X, Bell, CircleCheck, CircleAlert, Info, TriangleAlert } from "@lucide/svelte";
   import { app, cancelSync } from "../store.svelte";
 
@@ -24,7 +24,10 @@
           label={`${bytes(p.bytes_done)} of ${bytes(p.bytes_total)} · ${speed(p.speed)}${p.speed > 0 ? ` · ${duration((p.bytes_total - p.bytes_done) / p.speed)} left` : ""}`}
           detail={p.current}
         />
-        <div class="xs muted">{p.files_done} of {p.files_total} files{#if p.failed}<span class="err-text"> · {p.failed} failed</span>{/if}</div>
+        <div class="row between">
+          <span class="xs muted">{p.files_done} of {p.files_total} files{#if p.failed}<span class="err-text"> · {p.failed} failed</span>{/if}</span>
+          {#if (app.speeds[p.repo] ?? []).length > 2}<Sparkline values={app.speeds[p.repo]} width={120} height={22} label="Download speed" />{/if}
+        </div>
       </div>
     {:else}
       <p class="muted small">Nothing is downloading.</p>

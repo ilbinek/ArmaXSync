@@ -366,6 +366,7 @@ async fn remove(
         .db
         .call(move |c| c.execute("DELETE FROM repos WHERE id=?1", [id]))
         .await?;
+    let _ = crate::stats::forget_repo(&state, id).await;
     state.repos.write().unwrap().remove(&slug);
     if q.delete_files && r.mode == RepoMode::Managed {
         let _ = std::fs::remove_dir_all(&rt.root);

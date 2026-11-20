@@ -480,5 +480,10 @@ pub async fn gc_job(state: &Shared, ctx: &JobCtx) -> anyhow::Result<serde_json::
         }
     }
     ctx.log(format!("removed {removed} item(s)"));
+    match crate::stats::prune(state).await {
+        Ok(n) if n > 0 => ctx.log(format!("pruned {n} old statistics row(s)")),
+        Ok(_) => {}
+        Err(e) => ctx.log(format!("statistics pruning failed: {e:#}")),
+    }
     Ok(serde_json::json!({"removed": removed}))
 }

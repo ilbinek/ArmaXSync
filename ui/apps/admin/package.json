@@ -11,7 +11,8 @@
   "dependencies": {
     "@axs/kit": "workspace:*",
     "@lucide/svelte": "1.75.0",
-    "cronstrue": "2.59.0"
+    "cronstrue": "2.59.0",
+    "echarts": "5.6.0"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",

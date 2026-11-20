@@ -145,6 +145,8 @@ pub struct Published {
     pub files: HashMap<String, Bytes>,
     pub file_count: usize,
     pub total_size: u64,
+    /// Addon folders (lowercase), longest first, for per-addon statistics.
+    pub addons: Vec<String>,
 }
 
 impl Published {
@@ -179,6 +181,8 @@ impl Published {
                     if let Ok(man) = axs_model::Manifest::from_zst(&m) {
                         p.file_count = man.files.len();
                         p.total_size = man.total_size();
+                        p.addons = man.addons.iter().map(|a| a.to_ascii_lowercase()).collect();
+                        p.addons.sort_by_key(|a| std::cmp::Reverse(a.len()));
                     }
                     p.files
                         .insert(format!("{AXS_FOLDER}/{}", i.manifest), Bytes::from(m));
@@ -239,6 +243,7 @@ pub struct AppState {
     pub global_downloads: Arc<Semaphore>,
     pub started: i64,
     pub updates: crate::updates::Updates,
+    pub stats: Arc<crate::stats::collect::Collector>,
 }
 
 pub type Shared = Arc<AppState>;

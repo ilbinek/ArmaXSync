@@ -244,6 +244,14 @@ impl JobManager {
                     ("failed", None, Some(format!("{e:#}")))
                 }
             };
+            if let (Some(s), Some(repo)) = (&summary, repo_id) {
+                if matches!(
+                    kind,
+                    JobKind::Build | JobKind::Publish { .. } | JobKind::Mirror
+                ) {
+                    crate::stats::note_revision(&state, repo, id, kind.name(), s).await;
+                }
+            }
             let log = ctx.log.lock().unwrap().clone();
             let summary_s = summary.as_ref().map(|s| s.to_string());
             let _ = state

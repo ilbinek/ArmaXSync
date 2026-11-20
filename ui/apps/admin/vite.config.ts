@@ -4,7 +4,8 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 export default defineConfig({
   base: "/admin/",
   plugins: [svelte()],
-  build: { outDir: "build", emptyOutDir: true, target: "es2021" },
+  // The statistics chunk (ECharts) is loaded on demand.
+  build: { outDir: "build", emptyOutDir: true, target: "es2021", chunkSizeWarningLimit: 700 },
   server: {
     port: 5173,
     strictPort: true,

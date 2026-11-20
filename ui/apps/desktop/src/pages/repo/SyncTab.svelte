@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Section, Button, Field, PathInput, Switch, Progress, Alert, Stat, bytes, speed, duration, toast, toastError, confirmDialog } from "@axs/kit";
+  import { Section, Button, Field, PathInput, Switch, Progress, Alert, Stat, Sparkline, bytes, speed, duration, toast, toastError, confirmDialog } from "@axs/kit";
   import { Download, Eye, X, ChevronRight, FilePlus2, FilePen, FileX2, FolderX, CircleCheck } from "@lucide/svelte";
   import { call, pickFolder, type RepoConfig, type RepoInfo, type SyncOutcome, type PlanOp } from "../../api";
   import { app, refresh, startSync, cancelSync } from "../../store.svelte";
@@ -94,6 +94,7 @@
           detail={progress.current}
         />
         <div class="row">
+          {#if (app.speeds[repo.name] ?? []).length > 2}<Sparkline values={app.speeds[repo.name]} width={140} height={26} label="Download speed" />{/if}
           <span class="small muted">{speed(progress.speed)}{progress.speed > 0 ? ` · ${duration((progress.bytes_total - progress.bytes_done) / progress.speed)} left` : ""}</span>
           {#if progress.failed}<span class="small err-text">{progress.failed} file(s) failed</span>{/if}
           <div class="spacer"></div>

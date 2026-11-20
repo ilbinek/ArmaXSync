@@ -49,7 +49,9 @@ pub async fn build_state(cfg: config::Config) -> anyhow::Result<Shared> {
     } else {
         cfg.max_downloads as usize
     };
+    let salt = stats::load_salt(&db)?;
     let st = Arc::new(AppState {
+        stats: Arc::new(stats::collect::Collector::new(cfg.stats.players, salt)),
         global_limiter: Arc::new(axs_transport::RateLimiter::new(cfg.bandwidth_limit)),
         global_downloads: Arc::new(tokio::sync::Semaphore::new(max)),
         jobs: jobs::JobManager::new(cfg.job_workers),

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Badge, Skeleton, Alert, copyText, toast, toastError, confirmDialog, navigate } from "@axs/kit";
+  import { Button, Badge, Skeleton, Alert, Topo, copyText, toast, toastError, confirmDialog, navigate } from "@axs/kit";
   import { Crosshair, Server as ServerIcon, Lock, CircleCheck, CircleAlert, TriangleAlert, LoaderCircle, Copy, ChevronDown, Layers, RefreshCw, Plus, Gamepad2 } from "@lucide/svelte";
   import { call, selectedAddons, type Preview, type Profile, type GroupNode } from "../api";
   import { app, saveProfile, startSync, refresh } from "../store.svelte";
@@ -139,7 +139,8 @@
   <div class="page"><Skeleton block height={220} /><Skeleton lines={4} /></div>
 {:else}
   <div class="page">
-    <section class="hero card bracket gridbg">
+    <section class="hero card bracket">
+      <Topo opacity={0.16} coords={`GRID ${String(selected.length).padStart(3, "0")} ${String(app.state.repos.length * 37 + 104).padStart(3, "0")}`} />
       <div class="hero-main">
         <div class="eyebrow">Profile · {profile.name}</div>
         <h1 class="title">
@@ -250,14 +251,12 @@
 
 <style>
   .hero {
-    display: flex; gap: 24px; align-items: center; flex-wrap: wrap; padding: 26px 28px;
+    position: relative; overflow: hidden;
+    display: flex; gap: 24px; align-items: center; flex-wrap: wrap; padding: 28px 28px;
     background-color: var(--surface-1);
-    background-image:
-      radial-gradient(ellipse at 100% 0%, var(--accent-soft), transparent 60%),
-      linear-gradient(var(--grid-line) 1px, transparent 1px),
-      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-    background-size: auto, 24px 24px, 24px 24px;
+    background-image: radial-gradient(ellipse at 100% 0%, var(--accent-soft), transparent 60%);
   }
+  .hero > :global(:not(.topo)) { position: relative; z-index: 1; }
   .hero-main { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 8px; }
   .title { font-size: 38px; line-height: 1; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }

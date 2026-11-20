@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Toasts, Logo, Menu, Button, EmptyState, router, matchRoute, navigate, setTheme, bytes, type Theme } from "@axs/kit";
+  import { Toasts, Logo, Menu, Button, EmptyState, Topo, router, matchRoute, navigate, setTheme, bytes, type Theme } from "@axs/kit";
   import { Crosshair, Layers, Database, Server, Wrench, Settings as SettingsIcon, ChevronsLeft, ChevronsRight, Download, ArrowUpCircle, UserRound, Check, Plus, CircleAlert, RotateCw } from "@lucide/svelte";
   import { on } from "./api";
   import { app, refresh, loadProfile, checkAll, initEvents, switchProfile, saveConfig, checkForUpdate } from "./store.svelte";
@@ -153,6 +153,8 @@
     </aside>
 
     <main>
+      <Topo fixed tone="fg" opacity={0.03} fade="right" />
+      {#key router.path.split("/").slice(0, 3).join("/")}<div class="route">
       {#if repoParams}
         {#key repoParams.name}<RepoDetail name={repoParams.name} />{/key}
       {:else if router.path === "/modsets"}
@@ -168,6 +170,7 @@
       {:else}
         <Play onadd={() => (addUrl = "")} />
       {/if}
+      </div>{/key}
     </main>
   </div>
 {/if}
@@ -240,5 +243,7 @@
   .linkish { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; }
   .linkish:hover { color: var(--fg-2); }
 
-  main { overflow: auto; min-width: 0; padding: 26px 30px 40px; scrollbar-gutter: stable; }
+  main { overflow: auto; min-width: 0; padding: 26px 30px 40px; scrollbar-gutter: stable; position: relative; }
+  .route { position: relative; z-index: 1; animation: route-in 220ms var(--ease); }
+  @keyframes route-in { from { opacity: 0; transform: translateY(6px); } }
 </style>

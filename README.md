@@ -63,6 +63,29 @@ Legacy command lines are still accepted: `-sync <repo> <dest> <true|false>`, `-b
 | 5 | Verification failed |
 | 10 | Updates available (with `check --fail-on-update`) |
 
+## Statistics
+
+The admin UI has a **Statistics** page and a Stats tab on each repository:
+- traffic over time
+- unique players
+- client programs and versions
+- the most downloaded addons
+- a weekday × hour peak-time heatmap
+- publish history and job health
+- a live view of current downloads
+
+Every chart can be exported as CSV, and Prometheus metrics are at `/metrics`.
+
+Privacy:
+- **Players are counted by a salted hash of their IP address. The address itself is never stored.**
+- The hash salt changes every month and the old one is deleted, so players can't be linked from one month to the next.
+- The hashes are folded into HyperLogLog sketches, which store only counts.
+- Set `players = false` under `[stats]` to turn player counting off completely.
+
+Retention is set under `[stats]`: daily data is kept 365 days and hourly data 90 days by default.
+
+**Behind a reverse proxy**, add the proxy's address or network to `trusted_proxies` (CIDR ranges work). Otherwise every player appears to come from the proxy's address. In Docker, that means the network your proxy connects from, for example `"172.16.0.0/12"`; set it with `ARMAXSYNC_TRUSTED_PROXIES=127.0.0.1,::1,172.16.0.0/12` if you have no config file.
+
 ## Updates
 
 ArmaXSync updates itself from [GitHub releases](https://github.com/ilbinek/ArmaXSync/releases). Every release artifact is signed (minisign), and updates are verified against the public key compiled into the apps.

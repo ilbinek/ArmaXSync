@@ -40,6 +40,18 @@ pub fn spawn(state: Shared) {
             let _ = JobManager::submit(&s, JobKind::Gc, None, None).await;
         }
     });
+    // Live throughput samples (memory only).
+    let s = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            s.stats.sample(
+                s.stats
+                    .live_bytes
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            );
+        }
+    });
     // Stats flush.
     tokio::spawn(async move {
         loop {

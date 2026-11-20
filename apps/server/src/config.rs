@@ -36,6 +36,29 @@ pub struct Config {
     pub ui_dir: Option<PathBuf>,
     /// Release checks and self-update.
     pub updates: crate::updates::UpdateConfig,
+    /// Download statistics.
+    pub stats: StatsConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct StatsConfig {
+    /// Count unique players (hashed addresses, monthly salt, never stored raw).
+    pub players: bool,
+    /// Keep daily statistics this many days.
+    pub retention_days: u32,
+    /// Keep hourly statistics this many days.
+    pub hourly_retention_days: u32,
+}
+
+impl Default for StatsConfig {
+    fn default() -> Self {
+        Self {
+            players: true,
+            retention_days: 365,
+            hourly_retention_days: 90,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +84,7 @@ impl Default for Config {
             aliases: vec![],
             ui_dir: None,
             updates: Default::default(),
+            stats: Default::default(),
         }
     }
 }
@@ -87,6 +111,13 @@ impl Config {
         }
         if let Some(v) = env("ARMAXSYNC_BANDWIDTH_LIMIT") {
             c.bandwidth_limit = v.parse()?;
+        }
+        if let Some(v) = env("ARMAXSYNC_TRUSTED_PROXIES") {
+            c.trusted_proxies = v
+                .split(',')
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty())
+                .collect();
         }
         if let Some(v) = env("ARMAXSYNC_METRICS_TOKEN") {
             c.metrics_token = Some(v);
@@ -128,6 +159,9 @@ bind = "0.0.0.0:8080"
 # URL clients use to reach this server (put your reverse proxy's https URL here)
 public_url = "https://mods.example.com"
 data_dir = "/var/lib/armaxsync"
+# Reverse proxies whose X-Forwarded-For is trusted: IPs or CIDR ranges. In
+# Docker add the network your proxy connects from (e.g. "172.16.0.0/12"),
+# or every player looks like the proxy.
 trusted_proxies = ["127.0.0.1", "::1"]
 # bytes per second, 0 = unlimited
 bandwidth_limit = 0
@@ -145,6 +179,13 @@ interval_hours = 6
 # Install new releases automatically, at most once per window (server time).
 auto_install = false
 auto_install_cron = "0 4 * * *"
+
+# Download statistics. Players are counted by a salted hash of their address
+# (rotated monthly); addresses are never stored.
+[stats]
+players = true
+retention_days = 365
+hourly_retention_days = 90
 
 # Keep old repository URLs working after migrating to ArmaXSync:
 # [[aliases]]

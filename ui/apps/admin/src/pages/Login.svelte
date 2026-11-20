@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Logo, Button, Field, PasswordInput, Alert } from "@axs/kit";
+  import { Logo, Button, Field, PasswordInput, Alert, Topo } from "@axs/kit";
   import { LogIn, ShieldCheck } from "@lucide/svelte";
   import { get, post, login, ApiError, type Me } from "../api";
 
@@ -48,7 +48,8 @@
   }
 </script>
 
-<div class="wrap gridbg">
+<div class="wrap">
+  <Topo opacity={0.12} fade="center" fixed />
   <form class="card bracket stack" onsubmit={submit}>
     <Logo size={40} wordmark sub="Server admin" />
     <div>
@@ -81,7 +82,7 @@
 </div>
 
 <style>
-  .wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
-  form { width: min(400px, 100%); padding: 26px; gap: 16px; }
+  .wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; position: relative; }
+  form { width: min(400px, 100%); padding: 26px; gap: 16px; position: relative; z-index: 1; box-shadow: var(--shadow-lg); }
   h1 { font-size: 24px; }
 </style>

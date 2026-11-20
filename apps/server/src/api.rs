@@ -87,6 +87,7 @@ pub fn router(state: Shared) -> Router {
         .route("/jobs/{id}/cancel", post(cancel_job))
         .route("/audit", get(crate::audit::list))
         .route("/stats", get(crate::stats::stats))
+        .merge(crate::stats::api::routes())
         .route("/server", get(server_info))
         .route("/system", get(system_info))
         .route("/system/update/check", post(update_check))
@@ -127,7 +128,11 @@ async fn serve_repo(State(state): State<Shared>, req: Request) -> Response {
     let raw = req.uri().path().to_owned();
     match crate::files::split_repo_path(&raw) {
         Some((slug, rest)) => {
-            crate::files::serve(state, &slug, &rest, &method, req.headers()).await
+            let peer = req
+                .extensions()
+                .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+                .map(|c| c.0);
+            crate::files::serve(state, &slug, &rest, &method, req.headers(), peer).await
         }
         None => ApiError::not_found().into_response(),
     }
@@ -142,12 +147,17 @@ async fn fallback(State(state): State<Shared>, req: Request) -> Response {
             let prefix = a.path.trim_end_matches('/');
             if let Some(rest) = raw.strip_prefix(prefix) {
                 if rest.is_empty() || rest.starts_with('/') {
+                    let peer = req
+                        .extensions()
+                        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+                        .map(|c| c.0);
                     return crate::files::serve(
                         state.clone(),
                         &a.repo,
                         rest,
                         &method,
                         req.headers(),
+                        peer,
                     )
                     .await;
                 }

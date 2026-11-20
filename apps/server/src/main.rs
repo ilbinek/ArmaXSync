@@ -38,6 +38,13 @@ enum Cmd {
     ExampleConfig,
     /// Exit 0 when the running server answers on its bind address.
     Healthcheck,
+    /// Fill the statistics with synthetic history (debug builds, UI work).
+    #[cfg(debug_assertions)]
+    #[command(hide = true)]
+    SeedStats {
+        #[arg(long, default_value_t = 120)]
+        days: u32,
+    },
     /// Verify a downloaded release binary (used by the root update helper).
     #[command(hide = true)]
     VerifyUpdate {
@@ -100,6 +107,12 @@ async fn main() -> anyhow::Result<()> {
     let st = build_state(cfg).await?;
     match cli.cmd.unwrap_or(Cmd::Serve) {
         Cmd::Serve => serve(st).await,
+        #[cfg(debug_assertions)]
+        Cmd::SeedStats { days } => {
+            armaxsync_server::stats::seed::seed(&st, days).await?;
+            println!("seeded {days} days of statistics");
+            Ok(())
+        }
         Cmd::Init { username, password } => {
             let n: i64 = st.db.with(|c| {
                 c.query_row("SELECT COUNT(*) FROM users WHERE role='owner'", [], |r| {

@@ -67,7 +67,8 @@ code{font-family:var(--mono);font-size:12.5px}
 /// Page layout on top of the shared kit styles.
 const PUBLIC_STYLE: &str = r#"
 body{min-height:100vh;display:flex;flex-direction:column}
-.top{border-bottom:1px solid var(--line);background:var(--surface-1)}
+.top{position:relative;overflow:hidden;flex-shrink:0;border-bottom:1px solid var(--line);background:var(--surface-1)}
+.top .in{position:relative;z-index:1}
 .top .in,.wrap{width:100%;max-width:980px;margin:0 auto;padding:0 18px}
 .top .in{display:flex;align-items:center;gap:14px;height:62px}
 .brand{display:flex;align-items:center;gap:10px;color:var(--fg);text-decoration:none!important;line-height:1}
@@ -105,24 +106,41 @@ const LOGO: &str = r#"<svg width="32" height="32" viewBox="0 0 32 32" aria-hidde
 
 const COPY_SCRIPT: &str = "function axsCopy(t){if(navigator.clipboard&&window.isSecureContext)return navigator.clipboard.writeText(t).then(()=>true,()=>false);var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.top='-1000px';document.body.appendChild(a);a.select();var ok=false;try{ok=document.execCommand('copy')}catch(e){}document.body.removeChild(a);return Promise.resolve(ok)}document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{axsCopy(b.dataset.copy).then(ok=>{b.textContent=ok?'Copied':'Press Ctrl+C';setTimeout(()=>b.textContent='Copy',1500)})}))";
 
-/// URL of the admin build's stylesheet, if a UI is embedded (or `ui_dir` set).
-fn kit_css(state: &Shared) -> Option<String> {
-    use std::sync::OnceLock;
-    static EMBEDDED: OnceLock<Option<String>> = OnceLock::new();
+/// URL of a (content-hashed) asset of the admin build, e.g. its stylesheet
+/// or the topographic pattern, if a UI is embedded (or `ui_dir` is set).
+fn kit_asset(state: &Shared, prefix: &str, ext: &str) -> Option<String> {
+    let found = |name: &str| name.starts_with(prefix) && name.ends_with(ext);
     if let Some(dir) = &state.cfg.ui_dir {
         return std::fs::read_dir(dir.join("assets"))
             .ok()?
             .flatten()
             .map(|e| e.file_name().to_string_lossy().into_owned())
-            .find(|n| n.ends_with(".css"))
+            .find(|n| found(n))
             .map(|n| format!("/admin/assets/{n}"));
     }
-    EMBEDDED
-        .get_or_init(|| {
-            AdminAssets::iter()
-                .find(|f| f.starts_with("assets/") && f.ends_with(".css"))
-                .map(|f| format!("/admin/{f}"))
-        })
+    AdminAssets::iter()
+        .filter_map(|f| f.strip_prefix("assets/").map(str::to_owned))
+        .find(|n| found(n))
+        .map(|n| format!("/admin/assets/{n}"))
+}
+
+fn kit_css(state: &Shared) -> Option<String> {
+    use std::sync::OnceLock;
+    static CSS: OnceLock<Option<String>> = OnceLock::new();
+    if state.cfg.ui_dir.is_some() {
+        return kit_asset(state, "index-", ".css").or_else(|| kit_asset(state, "", ".css"));
+    }
+    CSS.get_or_init(|| kit_asset(state, "index-", ".css").or_else(|| kit_asset(state, "", ".css")))
+        .clone()
+}
+
+fn topo_svg(state: &Shared) -> Option<String> {
+    use std::sync::OnceLock;
+    static TOPO: OnceLock<Option<String>> = OnceLock::new();
+    if state.cfg.ui_dir.is_some() {
+        return kit_asset(state, "topo", ".svg");
+    }
+    TOPO.get_or_init(|| kit_asset(state, "topo", ".svg"))
         .clone()
 }
 
@@ -134,10 +152,16 @@ fn release_url() -> String {
 }
 
 fn page(state: &Shared, title: &str, description: &str, body: &str) -> Html<String> {
-    let css = match kit_css(state) {
+    let mut css = match kit_css(state) {
         Some(href) => format!("<link rel=\"stylesheet\" href=\"{}\">", esc(&href)),
         None => format!("<style>{FALLBACK_STYLE}</style>"),
     };
+    if let Some(topo) = topo_svg(state) {
+        css.push_str(&format!(
+            "<style>.top::before{{content:\"\";position:absolute;inset:0;pointer-events:none;opacity:.14;background:var(--accent);-webkit-mask:url({0}) 0 0/640px 640px repeat;mask:url({0}) 0 0/640px 640px repeat}}</style>",
+            esc(&topo)
+        ));
+    }
     let title = esc(title);
     let desc = esc(description);
     let rel = esc(&release_url());

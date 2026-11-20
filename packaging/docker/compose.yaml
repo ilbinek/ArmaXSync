@@ -13,6 +13,8 @@ services:
     environment:
       ARMAXSYNC_PUBLIC_URL: "https://mods.example.com"   # URL clients use (your reverse proxy)
       # ARMAXSYNC_BANDWIDTH_LIMIT: "50000000"            # bytes/s
+      # Your reverse proxy's network, so statistics see real player addresses:
+      # ARMAXSYNC_TRUSTED_PROXIES: "127.0.0.1,::1,172.16.0.0/12"
     volumes:
       - armaxsync-data:/data
       # External repositories: mount existing mod folders read-write

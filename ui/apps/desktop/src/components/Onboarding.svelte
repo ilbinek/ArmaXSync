@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Logo, Button, Field, PathInput, Alert, toast, errorText } from "@axs/kit";
+  import { Logo, Button, Field, PathInput, Alert, Topo, toast, errorText } from "@axs/kit";
   import { Gamepad2, FolderDown, History, Database, Check, ArrowRight } from "@lucide/svelte";
   import { call, pickFile, pickFolder } from "../api";
   import { app, refresh, loadProfile, saveConfig, saveProfile } from "../store.svelte";
@@ -48,7 +48,8 @@
   }
 </script>
 
-<div class="ob gridbg">
+<div class="ob">
+  <Topo fixed opacity={0.1} fade="center" />
   <div class="inner">
     <div class="hero">
       <Logo size={52} />
@@ -110,7 +111,7 @@
 
 <style>
   .ob { min-height: 100vh; display: grid; place-items: center; padding: 40px 24px; overflow: auto; }
-  .inner { width: min(760px, 100%); display: flex; flex-direction: column; gap: 22px; }
+  .inner { width: min(760px, 100%); display: flex; flex-direction: column; gap: 22px; position: relative; z-index: 1; }
   .hero { display: flex; gap: 18px; align-items: center; }
   .hero h1 { font-size: 34px; margin: 2px 0 6px; }
   .hero p { margin: 0; max-width: 60ch; }

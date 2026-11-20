@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Toasts, Logo, Menu, Button, Spinner, router, matchRoute, navigate, toast, setTheme, theme } from "@axs/kit";
-  import { LayoutDashboard, Database, ListChecks, ChartColumn, Users as UsersIcon, ScrollText, KeyRound, Menu as MenuIcon, X, LogOut, ExternalLink, UserRound, Moon, Sun, Monitor, LoaderCircle } from "@lucide/svelte";
-  import { me as fetchMe, logout, onUnauthorized, onServerVersionChange, jobLabel } from "./api";
+  import { Toasts, Logo, Menu, Button, Spinner, Topo, CommandPalette, router, matchRoute, navigate, toast, toastError, setTheme, theme, type PaletteItem } from "@axs/kit";
+  import { LayoutDashboard, Database, ListChecks, ChartColumn, Users as UsersIcon, ScrollText, KeyRound, Menu as MenuIcon, X, LogOut, ExternalLink, UserRound, Moon, Sun, Monitor, LoaderCircle, Search, Plus, Hammer, FolderSync, FolderTree, Settings2, ArrowUpCircle, UserPlus } from "@lucide/svelte";
+  import { me as fetchMe, logout, onUnauthorized, onServerVersionChange, jobLabel, get, post, type RepoSummary, type Job } from "./api";
+  import CreateRepo from "./components/CreateRepo.svelte";
   import { session, isAdmin, loadSystem, pollActive, openJob } from "./session.svelte";
   import Login from "./pages/Login.svelte";
   import Dashboard from "./pages/Dashboard.svelte";
@@ -19,6 +20,55 @@
   let loading = $state(true);
   let navOpen = $state(false);
   let expired = $state(false);
+  let paletteOpen = $state(false);
+  let createOpen = $state(false);
+  let paletteRepos = $state<RepoSummary[]>([]);
+  let paletteJobs = $state<Job[]>([]);
+
+  async function openPalette() {
+    paletteOpen = true;
+    [paletteRepos, paletteJobs] = await Promise.all([get<RepoSummary[]>("/repos").catch(() => []), get<Job[]>("/jobs?limit=6").catch(() => [])]);
+  }
+  function globalKey(e: KeyboardEvent) {
+    if (!session.me) return;
+    const typing = (e.target as HTMLElement)?.closest?.("input, textarea, select, [contenteditable]");
+    if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") || (e.key === "/" && !typing)) {
+      e.preventDefault();
+      paletteOpen ? (paletteOpen = false) : openPalette();
+    }
+  }
+  async function run(path: string, label: string) {
+    try {
+      const r = await post<{ job: number }>(path);
+      openJob(r.job);
+    } catch (e) {
+      toastError(e, label);
+    }
+  }
+  const paletteItems = $derived.by((): PaletteItem[] => {
+    const items: PaletteItem[] = nav.map((n) => ({ id: "p" + n.path, label: n.label, group: "Pages", icon: n.icon, run: () => navigate(n.path) }));
+    for (const r of paletteRepos) {
+      const base = `/repos/${encodeURIComponent(r.slug)}`;
+      items.push({ id: "r" + r.slug, label: r.name, group: "Repositories", icon: Database, hint: `/r/${r.slug}`, keywords: r.slug, run: () => navigate(base) });
+      items.push({ id: "rf" + r.slug, label: `${r.name}: files`, group: "Repositories", icon: FolderTree, keywords: `${r.slug} upload`, run: () => navigate(`${base}?tab=files`) });
+      items.push({ id: "rs" + r.slug, label: `${r.name}: settings`, group: "Repositories", icon: Settings2, keywords: r.slug, run: () => navigate(`${base}?tab=settings`) });
+      items.push({ id: "rt" + r.slug, label: `${r.name}: statistics`, group: "Repositories", icon: ChartColumn, keywords: `${r.slug} stats`, run: () => navigate(`${base}?tab=stats`) });
+      items.push({ id: "rb" + r.slug, label: `Rebuild ${r.name}`, group: "Actions", weight: 5, icon: Hammer, keywords: `${r.slug} build publish`, run: () => run(`/repos/${encodeURIComponent(r.slug)}/build`, "Rebuild") });
+      if (r.has_mirror) items.push({ id: "rm" + r.slug, label: `Pull ${r.name} from mirror`, group: "Actions", icon: FolderSync, keywords: r.slug, run: () => run(`/repos/${encodeURIComponent(r.slug)}/mirror`, "Mirror pull") });
+    }
+    if (admin) {
+      items.push({ id: "a-new", label: "New repository", group: "Actions", icon: Plus, keywords: "create add", run: () => (createOpen = true) });
+      items.push({ id: "a-user", label: "New user", group: "Actions", icon: UserPlus, keywords: "create add account", run: () => navigate("/users") });
+      items.push({ id: "a-upd", label: "Check for server updates", group: "Actions", icon: ArrowUpCircle, keywords: "version release", run: () => post("/system/update/check").then(loadSystem).then(() => toast(session.system?.update?.available ? `ArmaXSync ${session.system.update.latest?.version} is available` : "The server is up to date")).catch((e) => toastError(e)) });
+    }
+    items.push({ id: "a-token", label: "New API token", group: "Actions", icon: KeyRound, keywords: "create push", run: () => navigate("/tokens") });
+    items.push({ id: "t-dark", label: "Dark theme", group: "Preferences", icon: Moon, run: () => setTheme("dark") });
+    items.push({ id: "t-light", label: "Light theme", group: "Preferences", icon: Sun, run: () => setTheme("light") });
+    items.push({ id: "t-sys", label: "System theme", group: "Preferences", icon: Monitor, run: () => setTheme("system") });
+    items.push({ id: "out", label: "Sign out", group: "Preferences", icon: LogOut, run: signOut });
+    for (const j of paletteJobs) items.push({ id: "j" + j.id, label: `${jobLabel(j.kind)} #${j.id}${j.repo ? ` · ${j.repo}` : ""}`, group: "Recent jobs", icon: ListChecks, hint: j.status, weight: -15, run: () => openJob(j.id) });
+    return items;
+  });
 
   onMount(() => {
     (async () => {
@@ -70,6 +120,7 @@
   const ThemeIcon = $derived(theme.value === "light" ? Sun : theme.value === "system" ? Monitor : Moon);
 </script>
 
+<svelte:window onkeydown={globalKey} />
 <Toasts />
 {#if loading}
   <div class="center"><Logo size={44} /></div>
@@ -94,6 +145,9 @@
         <a class="brand" href="#/"><Logo size={32} wordmark sub="Server admin" /></a>
         <button class="btn ghost icon close" aria-label="Close navigation" onclick={() => (navOpen = false)}><X size={18} /></button>
       </div>
+      <button class="search" onclick={openPalette} aria-label="Search (Ctrl+K)">
+        <Search size={15} /><span class="grow">Search…</span><kbd>Ctrl</kbd><kbd>K</kbd>
+      </button>
       <nav aria-label="Main">
         {#each nav as n}
           <a href={"#" + n.path} class:active={isActive(n.path)} aria-current={isActive(n.path) ? "page" : undefined}>
@@ -137,7 +191,9 @@
     </aside>
 
     <main>
+      <Topo fixed tone="fg" opacity={0.035} fade="right" />
       <UpdateBanner />
+      {#key router.path.split("/").slice(0, 3).join("/")}<div class="route">
       {#if repoParams}
         {#key repoParams.slug}<Repo slug={repoParams.slug} />{/key}
       {:else if router.path === "/repos"}
@@ -157,9 +213,12 @@
       {:else}
         <div class="card"><div class="empty">Page not found. <a href="#/">Dashboard</a></div></div>
       {/if}
+      </div>{/key}
     </main>
   </div>
   <JobDrawer />
+  <CommandPalette bind:open={paletteOpen} items={paletteItems} />
+  <CreateRepo bind:open={createOpen} />
 {/if}
 
 {#if session.restarting}
@@ -204,7 +263,16 @@
   .user { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: var(--r); width: 100%; }
   .user:hover { background: var(--surface-2); }
   .av { width: 30px; height: 30px; border-radius: 50%; background: var(--surface-3); display: grid; place-items: center; color: var(--fg-2); flex-shrink: 0; }
-  main { padding: 26px 30px 48px; min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+  main { padding: 26px 30px 48px; min-width: 0; display: flex; flex-direction: column; gap: 18px; position: relative; }
+  main > :global(:not(.topo)) { position: relative; z-index: 1; }
+  .route { display: flex; flex-direction: column; gap: 18px; animation: route-in 220ms var(--ease); }
+  @keyframes route-in { from { opacity: 0; transform: translateY(6px); } }
+  .search {
+    display: flex; align-items: center; gap: 8px; margin: 0 2px 6px; padding: 7px 10px; border-radius: var(--r);
+    border: 1px solid var(--line); background: var(--bg); color: var(--fg-3); font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .search:hover { border-color: var(--line-strong); color: var(--fg-2); }
+  .search kbd { font-size: 10px; }
   .mbar { display: none; }
   .scrim { display: none; }
   .restart { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; background: var(--overlay); backdrop-filter: blur(3px); padding: 16px; }

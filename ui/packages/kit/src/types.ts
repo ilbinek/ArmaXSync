@@ -17,3 +17,7 @@ export type MenuItem =
   | { divider: true };
 
 export type TabItem = { id: string; label: string; icon?: Component<any>; count?: number | string | null; hidden?: boolean };
+
+export type DateRange = { from: number; to: number; preset: string };
+
+export type PaletteItem = { id: string; label: string; group: string; icon?: Component<any>; hint?: string; keywords?: string; /** Ranking bias (actions > pages > history). */ weight?: number; run: () => void };
